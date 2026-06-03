@@ -116,6 +116,28 @@ mnv_status_t mnv_run(mnv_ctx_t *ctx,
                      const mnv_act_t *input,
                      mnv_act_t       *output);
 
+/**
+ * @brief Run one inference pass against an explicitly named model.
+ *
+ * Equivalent to mnv_run(), but the caller passes the model pointer instead
+ * of relying on the one bound at mnv_init(). The pointer MUST be identical
+ * to the object passed to mnv_init(); any other model is rejected with
+ * MNV_ERR_CONFIG. This guarantees inference only ever runs over weights
+ * whose integrity was verified at init (Law I).
+ *
+ * Most applications should prefer mnv_run().
+ *
+ * @param ctx     Initialized context.
+ * @param model   Must equal the model passed to mnv_init().
+ * @param input   Q8 input vector of length MNV_INPUT_SIZE.
+ * @param output  Q8 output vector of length MNV_OUTPUT_SIZE. Zeroed on error.
+ * @return MNV_OK on success, error code otherwise.
+ */
+mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
+                                const mnv_model_t *model,
+                                const mnv_act_t   *input,
+                                mnv_act_t         *output);
+
 /* =========================================================================
  * SECURITY UTILITIES
  * ========================================================================= */
@@ -190,6 +212,24 @@ void mnv_seed_prng(mnv_ctx_t *ctx, uint32_t seed);
 mnv_status_t mnv_verify_output(const mnv_ctx_t *ctx,
                                 const mnv_act_t *input,
                                 const mnv_act_t *output);
+
+/**
+ * @brief Verify the output MAC using an explicitly supplied device key.
+ *
+ * Identical to mnv_verify_output() but takes the key directly, for the
+ * downstream-consumer case where the verifier holds the key but not the
+ * full model descriptor.
+ *
+ * @param ctx         Initialized context.
+ * @param device_key  32-byte device key (same key used to produce the MAC).
+ * @param input       The input passed to the inference call.
+ * @param output      The output produced by the inference call.
+ * @return MNV_OK if MAC is valid, MNV_ERR_TAMPER otherwise.
+ */
+mnv_status_t mnv_verify_output_with_key(const mnv_ctx_t *ctx,
+                                        const uint8_t   *device_key,
+                                        const mnv_act_t *input,
+                                        const mnv_act_t *output);
 
 /**
  * @brief Get the raw output MAC bytes (8 bytes).

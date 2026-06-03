@@ -256,6 +256,12 @@ typedef struct {
     /* v1.1: Xorshift32 PRNG state for LUT blinding */
     uint32_t    prng_state;
 
+    /* Model bound at mnv_init() after a successful integrity check.
+     * Inference runs only against this exact model object — see mnv_run().
+     * Storing it here (rather than re-accepting a model pointer at run time)
+     * is what prevents init-trusted / run-untrusted substitution. */
+    const mnv_model_t *model;
+
     /* State flags */
     bool        verified;     /* integrity check passed this session */
     bool        initialized;

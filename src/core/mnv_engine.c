@@ -102,6 +102,9 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
     }
     if (s != MNV_OK) { mnv_secure_zero(ctx, sizeof(mnv_ctx_t)); return MNV_ERR_TAMPER; }
 
+    /* Bind the verified model to the context. Inference is permitted only
+     * against this exact object (see mnv_run / mnv_run_with_model). */
+    ctx->model       = model;
     ctx->verified    = true;
     ctx->initialized = true;
     return MNV_OK;
@@ -130,6 +133,11 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     if (!ctx || !model || !input || !output) return MNV_ERR_NULL;
     if (!ctx->initialized)                   return MNV_ERR_CONFIG;
     if (!ctx->verified)                      return MNV_ERR_TAMPER;
+    /* Law I: only the model whose integrity was verified at mnv_init() may
+     * run. Reject any other model object — this is what stops an attacker
+     * from initializing with a trusted model and then running a different,
+     * unverified one through the same (still "verified") context. */
+    if (model != ctx->model)                 return MNV_ERR_CONFIG;
 
     mnv_status_t status;
 
@@ -196,18 +204,24 @@ fail:
     return status;
 }
 
-/* Shim: mnv_run() without model pointer cannot function */
+/* Canonical inference entry point. Runs the model bound at mnv_init(). */
 mnv_status_t mnv_run(mnv_ctx_t *ctx, const mnv_act_t *input, mnv_act_t *output)
 {
-    (void)ctx; (void)input; (void)output;
-    return MNV_ERR_CONFIG;
+    if (!ctx)              return MNV_ERR_NULL;
+    if (!ctx->initialized) return MNV_ERR_CONFIG;
+    return mnv_run_with_model(ctx, ctx->model, input, output);
 }
 
 /* ── Verification ──────────────────────────────────────────────────────── */
 
 mnv_status_t mnv_verify(mnv_ctx_t *ctx, const mnv_model_t *model)
 {
-    if (!ctx || !model) return MNV_ERR_NULL;
+    if (!ctx || !model)       return MNV_ERR_NULL;
+    if (!ctx->initialized)    return MNV_ERR_CONFIG;
+    /* Re-verification must target the model bound at init; otherwise a
+     * caller could validate model A and leave the context "verified" while
+     * mnv_run() still executes the bound model. */
+    if (model != ctx->model)  return MNV_ERR_CONFIG;
     mnv_status_t s = mnv_blake2s_verify(
         model->key, (uint8_t)MNV_CHACHA20_KEY_SIZE,
         model->encrypted_weights, model->encrypted_len,
@@ -225,6 +239,16 @@ mnv_status_t mnv_verify_output_with_key(const mnv_ctx_t *ctx,
 {
     if (!ctx || !device_key || !input || !output) return MNV_ERR_NULL;
     return mnv_outauth_verify(ctx, device_key, output, input);
+}
+
+mnv_status_t mnv_verify_output(const mnv_ctx_t *ctx,
+                                const mnv_act_t *input,
+                                const mnv_act_t *output)
+{
+    if (!ctx || !input || !output) return MNV_ERR_NULL;
+    if (!ctx->initialized || !ctx->model) return MNV_ERR_CONFIG;
+    /* Uses the device key from the model bound at init. */
+    return mnv_outauth_verify(ctx, ctx->model->key, output, input);
 }
 
 void mnv_get_output_mac(const mnv_ctx_t *ctx, uint8_t *mac)
