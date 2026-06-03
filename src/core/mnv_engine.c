@@ -181,7 +181,7 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     if (status != MNV_OK) goto fail_glitch;
 
     /* Confidence check */
-#if defined(MNV_ENABLE_INPUT_VALIDATION)
+#if defined(MNV_ENABLE_CONFIDENCE_CHECK)
     status = mnv_ct_confidence_check(output, MNV_OUTPUT_SIZE);
     if (status != MNV_OK) { mnv_secure_zero(output, MNV_OUTPUT_SIZE); return MNV_ERR_CONFIDENCE; }
 #endif

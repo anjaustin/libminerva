@@ -180,6 +180,7 @@
 #define MNV_ENABLE_CANARIES             /* SRAM canary anti-glitch detection     */
 #define MNV_ENABLE_DOUBLE_RUN           /* Redundant inference comparison        */
 #define MNV_ENABLE_INPUT_VALIDATION     /* Constant-time input range clamping    */
+#define MNV_ENABLE_CONFIDENCE_CHECK     /* Reject low-confidence outputs         */
 #define MNV_ENABLE_CONSTANT_TIME        /* Enforce CT arithmetic throughout      */
 
 /* Minimum output confidence to accept result (0-255 in Q8).

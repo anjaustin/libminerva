@@ -72,5 +72,14 @@ run_cfg bnn_odd test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
     -DMNV_INPUT_SIZE=5 -DMNV_LAYER_0_SIZE=6 -DMNV_LAYER_1_SIZE=5 \
     -DMNV_OUTPUT_SIZE=3 -DMNV_NUM_LAYERS=3
 
+# Confidence-check threshold semantics (only needs mnv_ct.c; threshold > 0)
+echo "=== confidence ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_MIN_CONFIDENCE=20 $INC \
+        "$ROOT/tests/host/test_confidence.c" "$ROOT/src/security/mnv_ct.c" \
+        -o "$TMP/confidence" 2>"$TMP/confidence.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/confidence.berr"; rc=1
+elif ! "$TMP/confidence"; then rc=1; fi
+echo
+
 if [ "$rc" -eq 0 ]; then echo "ALL ENGINE CONFIGS PASSED"; else echo "ENGINE TESTS FAILED"; fi
 exit $rc

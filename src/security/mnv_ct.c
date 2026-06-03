@@ -80,7 +80,9 @@ uint8_t mnv_ct_argmax(const mnv_act_t *vec, uint16_t len)
 
 mnv_status_t mnv_ct_confidence_check(const mnv_act_t *output, uint16_t len)
 {
-#if MNV_MIN_CONFIDENCE == 0
+#if !defined(MNV_ENABLE_CONFIDENCE_CHECK) || (MNV_MIN_CONFIDENCE == 0)
+    /* Disabled (default): threshold 0 accepts everything, including an
+     * all-negative output vector. */
     (void)output; (void)len;
     return MNV_OK;
 #else
@@ -91,7 +93,10 @@ mnv_status_t mnv_ct_confidence_check(const mnv_act_t *output, uint16_t len)
         max_val = (int8_t)(((uint8_t)max_val          & ~gt) |
                             ((uint8_t)(int8_t)output[i] &  gt));
     }
-    return ((uint8_t)max_val >= (uint8_t)MNV_MIN_CONFIDENCE) ? MNV_OK
-                                                              : MNV_ERR_CONFIDENCE;
+    /* SIGNED comparison: logits are int8 [-128,127]. Casting max_val to
+     * unsigned (the old bug) made a negative max read as ~255 and pass any
+     * threshold. A negative max logit is low confidence, so reject it. */
+    return ((int16_t)max_val >= (int16_t)MNV_MIN_CONFIDENCE) ? MNV_OK
+                                                             : MNV_ERR_CONFIDENCE;
 #endif
 }
