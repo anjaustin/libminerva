@@ -52,6 +52,14 @@ if(MNV_TARGET STREQUAL "host")
     enable_testing()
     add_test(NAME minerva_host_tests COMMAND minerva_test)
 
+    # End-to-end engine tests (one build per arch; see the script). Driven by
+    # bash because each arch/topology needs its own compile of the engine.
+    find_program(BASH_PROGRAM bash)
+    if(BASH_PROGRAM)
+        add_test(NAME minerva_engine_tests
+                 COMMAND ${BASH_PROGRAM} ${CMAKE_SOURCE_DIR}/tests/host/run_engine_tests.sh)
+    endif()
+
     message(STATUS "Host build configured. Run: cmake --build build && ctest --test-dir build")
 endif()
 
