@@ -91,7 +91,10 @@ static void pack_activations(const mnv_act_t *acts, uint8_t *packed, uint16_t le
  * ========================================================================= */
 
 /* Packed activation scratch — must hold the widest layer's worth of bits,
- * not just layer 0 (a hidden layer can be wider). */
+ * not just layer 0 (a hidden layer can be wider).
+ * NOTE: file-scope (not in mnv_ctx_t) -> single-context, not reentrant. Fine
+ * for one-inference-at-a-time embedded use; wiped each layer, not by
+ * mnv_destroy(). */
 #define MNV_BNN_PACKED_BYTES  ((MNV_MAX_ACT_WIDTH + 7u) / 8u)
 static uint8_t packed_src[MNV_BNN_PACKED_BYTES];
 

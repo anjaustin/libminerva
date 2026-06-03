@@ -4,7 +4,7 @@
 |---|---|
 | **Release** | ![Version](https://img.shields.io/badge/version-1.3.0-blue) ![Codename](https://img.shields.io/badge/codename-Athena-gold) |
 | **Core** | ![Language](https://img.shields.io/badge/language-C-00599C) ![Standard](https://img.shields.io/badge/C-C11-blue) ![License](https://img.shields.io/badge/license-MIT-green) |
-| **Quality** | ![Build](https://img.shields.io/badge/build-passing-brightgreen) ![Tests](https://img.shields.io/badge/tests-26%20passing-brightgreen) |
+| **Quality** | ![Build](https://img.shields.io/badge/build-passing-brightgreen) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen) |
 | **Embedded Constraints** | ![Allocation](https://img.shields.io/badge/allocation-zero-orange) ![Dynamic Memory](https://img.shields.io/badge/dynamic%20memory-none-red) |
 | **Security** | ![Security](https://img.shields.io/badge/security-encrypted%20%7C%20authenticated-purple) ![Crypto](https://img.shields.io/badge/crypto-ChaCha20%20%2B%20BLAKE2s-purple) |
 | **Hardware Targets** | ![Targets](https://img.shields.io/badge/targets-AVR%20%7C%20STM32%20%7C%20Host-lightgrey) ![MCU](https://img.shields.io/badge/min%20target-ATmega328P-informational) |
@@ -180,6 +180,37 @@ Fixed: default changed to 0 (disabled). Set per-application via
 
 ---
 
+## What Changed in v1.3
+
+A full audit and remediation pass. Highlights:
+
+- **Build (host)** — the CMake flow now compiles and `ctest` passes; the
+  include paths and source list were previously incomplete.
+- **Public API** — `mnv_run_with_model`, `mnv_verify_output`, and
+  `mnv_verify_output_with_key` are now declared in `minerva.h`. `mnv_run()`
+  is a real entry point that runs the model bound at `mnv_init()` (no longer
+  a stub).
+- **Verification binding (security)** — `mnv_init()` binds the verified model
+  to the context, and inference rejects any other model pointer
+  (`MNV_ERR_CONFIG`). This closes a path where a context verified for one
+  model could run a different, unverified one.
+- **BNN** — fixed multi-layer ciphertext offset tracking, added per-layer
+  bias handling, and replaced the byte-popcount dot product with a
+  bit-addressed one that is correct for non-multiple-of-8 layer widths.
+  `MNV_QUANT_BINARY`/`Q4`/`Q15` are now actually selectable (Q8 no longer
+  forced on).
+- **Buffer sizing** — activation, weight-scratch, and bias buffers are sized
+  to the widest layer, not layer 0 (previously overflowed when a hidden layer
+  was wider than the input).
+- **Confidence check** — signed comparison (a negative max logit is low
+  confidence, not high) and its own `MNV_ENABLE_CONFIDENCE_CHECK` flag.
+- **Compiler** — PTQ calibration (`--calibrate`) for better bias scaling.
+- **Tests** — added end-to-end engine tests (MLP / CNN1D / BNN) that check
+  output against an independent reference, run under ASan + UBSan.
+- **Project** — added `LICENSE` (MIT) and `.gitignore`.
+
+---
+
 ## Python Validation Note
 
 When simulating Q8 inference in Python, use `//128` for the accumulator
@@ -223,25 +254,25 @@ confirming the engine computes correctly. See Known Limitations.
 
 ---
 
-## Known Limitations (v1.3 Roadmap)
+## Known Limitations
 
 **Bias quantization scale**
-Biases are quantized independently (scaled to [-127,127]). For models
-trained in float32, this works well for hidden layers but can distort the
-output layer when one class has a much larger bias than others. The correct
-fix is quantization-aware training (QAT) where the model is trained with
-simulated Q8 rounding. A `--qat-export` flag is planned for v1.3.
+Without calibration, biases are quantized independently (scaled to
+[-127,127]), which can distort the output layer when one class has a much
+larger bias than others. v1.3 adds PTQ calibration (`--calibrate`) that
+scales biases to match the accumulator domain. Full quantization-aware
+training (QAT) is still future work.
 
-**SRAM weight scratch buffer**
-The weight scratch buffer is sized for the widest layer (MNV_LAYER_0_SIZE *
-MNV_INPUT_SIZE bytes). For models with large intermediate layers, this can
-push SRAM usage high. Layer-by-layer streaming with smaller scratch is
-planned.
+**SRAM scratch buffer**
+The weight/activation scratch is sized to the widest layer across the whole
+network (v1.3 fixed an earlier assumption that layer 0 was widest). For
+models with large intermediate layers this can still push SRAM usage high;
+layer-by-layer streaming with smaller scratch is planned.
 
 **Output bus integrity**
-Output MAC (v1.1) covers the result but does not encrypt it. A consumer on
-the output bus can read the plaintext inference result. Encrypted output
-channels are planned for v1.3.
+The output MAC (v1.1) covers the result but does not encrypt it. A consumer
+on the output bus can read the plaintext inference result. Encrypted output
+channels are planned.
 
 ---
 
@@ -274,10 +305,14 @@ Output (v1.1+)
 ## Running Host Tests
 
 ```bash
-mkdir build && cd build && cmake .. -DMNV_TARGET=host && make && ctest -V
+cmake -S . -B build -DMNV_TARGET=host && cmake --build build && ctest --test-dir build -V
 ```
 
-Or directly:
+This runs two suites: `minerva_host_tests` (32 crypto/primitive unit tests)
+and `minerva_engine_tests` (end-to-end MLP / CNN1D / BNN inference checked
+against an independent reference, built under ASan + UBSan).
+
+To run just the primitive suite directly:
 
 ```bash
 gcc -DMNV_TARGET_HOST -Iinclude -Isrc/core -Isrc/security -Isrc/arch -Isrc/hal \
@@ -287,6 +322,9 @@ gcc -DMNV_TARGET_HOST -Iinclude -Isrc/core -Isrc/security -Isrc/arch -Isrc/hal \
     src/security/mnv_outauth.c src/hal/mnv_hal_host.c \
     -std=c11 -O2 -o test_host && ./test_host
 # Expected: All 32 tests PASSED.
+
+# End-to-end engine tests (all architectures):
+bash tests/host/run_engine_tests.sh
 ```
 
 ---
@@ -309,7 +347,7 @@ gcc -DMNV_TARGET_HOST -Iinclude -Isrc/core -Isrc/security -Isrc/arch -Isrc/hal \
 @software{minerva2025,
   title   = {MINERVA: Minimal Inference Engine for Robust, Verifiable,
              and Authenticated ML},
-  version = {1.2.0},
+  version = {1.3.0},
   year    = {2025},
   note    = {https://github.com/kavishka-dot/libminerva}
 }

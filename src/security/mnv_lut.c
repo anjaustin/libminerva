@@ -15,10 +15,11 @@
  *      b. Select using CT: hit = 0xFF when i == target, else 0x00
  *      c. Accumulate: result = (result & ~hit) | (entry & hit)
  *
- *   The access sequence is i+M, i+M+1, ..., wrapping around.
- *   Every run accesses all 256 entries in a different order (random M).
- *   The entry at real_idx is accessed at scan position target = real_idx - M.
- *   Since M is random, target is uniformly distributed — leaks nothing.
+ *   The access sequence is i+M, i+M+1, ..., wrapping around: all 256 entries
+ *   every run, in a fixed order rotated by a random start offset M. The real
+ *   entry is selected (in constant time) at scan position target = real_idx-M.
+ *   Since M is random, target is uniformly distributed and the absolute
+ *   address that carries the real value is unlinkable across calls.
  *
  *   Power trace shows 256 sequential-looking accesses starting at a random
  *   offset. The real index is unlinkable across calls.

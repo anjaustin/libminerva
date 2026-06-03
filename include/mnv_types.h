@@ -178,8 +178,9 @@ typedef struct {
  * ========================================================================= */
 
 typedef struct {
-    uint8_t  iv[MNV_CHACHA20_IV_SIZE];      /* ChaCha20 nonce            */
-    uint8_t  mac[MNV_BLAKE2S_DIGEST_SIZE];  /* BLAKE2s over plaintext    */
+    uint8_t  iv[MNV_CHACHA20_IV_SIZE];      /* ChaCha20 nonce             */
+    uint8_t  mac[MNV_BLAKE2S_DIGEST_SIZE];  /* BLAKE2s over ciphertext    */
+                                            /* (encrypt-then-MAC)         */
     uint16_t weight_count;                  /* number of weights         */
     uint16_t bias_count;                    /* number of biases          */
 } mnv_crypto_header_t;

@@ -3,6 +3,11 @@
 **Version:** 1.0.0-McGonagall  
 **Status:** Normative
 
+> **Update (v1.1–v1.3):** mitigations marked "planned v1.1" below have since
+> shipped — input-blinded LUT access (§4.3) and output authentication (§4.6).
+> The confidence-threshold default changed to 0/disabled (§4.5). See the
+> security-properties table in §5 for current status.
+
 ---
 
 ## 1. Scope
@@ -127,7 +132,7 @@ Minerva assumes an adversary with:
 
 1. **Input range validation** (constant-time): all input values are checked against `[MNV_Q_MIN, MNV_Q_MAX]`. Out-of-range inputs are rejected with `MNV_ERR_INPUT` before any inference computation begins.
 
-2. **Confidence threshold**: output is rejected if the maximum logit is below `MNV_MIN_CONFIDENCE` (default: 25%). Low-confidence outputs — which adversarial inputs often produce after Q8 quantization — are rejected with `MNV_ERR_CONFIDENCE`.
+2. **Confidence threshold**: output is rejected if the maximum logit is below `MNV_MIN_CONFIDENCE` (default: 0, i.e. disabled; set per-application). The comparison is signed, so a negative maximum logit counts as low confidence. Low-confidence outputs — which adversarial inputs often produce after Q8 quantization — are rejected with `MNV_ERR_CONFIDENCE`.
 
 **Residual risk:** Adversarial examples that remain within the valid input range and produce high-confidence wrong outputs are not detected. This is an inherent limitation of inference-time defenses. Training-time adversarial training is recommended for high-assurance deployments.
 
@@ -137,7 +142,7 @@ Minerva assumes an adversary with:
 
 **Attack:** Adversary injects or replays inference results on the output bus.
 
-**Mitigation (planned v1.1):** Output signing with a per-device session key. In v1.0, output integrity is the responsibility of the application layer.
+**Mitigation (shipped v1.1):** Per-inference output authentication — a session MAC over `output || input || counter` (see `mnv_outauth`), verifiable downstream via `mnv_verify_output()`. The result is authenticated but not encrypted; an output-bus reader can still observe the plaintext result (see README Known Limitations).
 
 ---
 
@@ -151,9 +156,9 @@ Minerva assumes an adversary with:
 | Fault injection detection | ✓ | Canaries + double-run |
 | Constant-time arithmetic | ✓ | No data-dependent branches |
 | Cache-timing resistance | ✓ | ChaCha20 (no S-box) |
-| Power-analysis resistance | Partial | LUT access is v1.1 |
+| Power-analysis resistance | Partial | Blinded LUT access shipped v1.1 |
 | Adversarial input detection | Partial | Range + confidence check only |
-| Output authentication | ✗ | Planned v1.1 |
+| Output authentication | ✓ | Session MAC, shipped v1.1 |
 
 ---
 

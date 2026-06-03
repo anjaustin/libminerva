@@ -10,7 +10,7 @@
  *  ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝
  *
  *  Minimal Inference Engine for Robust, Verifiable, and Authenticated ML
- *  Version 1.1.0 — "Athena"
+ *  Version 1.3.0 — "Athena"
  *
  *  The Three Minerva Laws:
  *    I.   Minerva never produces output from an unverified model.
@@ -70,7 +70,9 @@ extern "C" {
  * Performs:
  *   1. Context zeroing and canary placement.
  *   2. BLAKE2s integrity check over the encrypted weight blob.
- *   3. ChaCha20 keystream precomputation for layer 0.
+ *   3. Binds the verified model to the context for subsequent mnv_run().
+ *
+ * (ChaCha20 keystream is derived per layer during mnv_run(), not here.)
  *
  * Must be called before mnv_run(). If this returns anything other than
  * MNV_OK, the device should be treated as compromised.

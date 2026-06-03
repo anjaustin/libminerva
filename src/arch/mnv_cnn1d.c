@@ -30,7 +30,11 @@
 #define MNV_CNN_POOL_LEN   (MNV_CNN_CONV_LEN / MNV_CNN_POOL_SIZE)
 #define MNV_CNN_FLAT_SIZE  (MNV_CNN_NUM_FILTERS * MNV_CNN_POOL_LEN)
 
-/* Static scratch for one filter's pre-pool conv output */
+/* Static scratch for one filter's pre-pool conv output.
+ * NOTE: file-scope (not in mnv_ctx_t) -> this forward pass is single-context
+ * and not reentrant. Fine for the intended one-inference-at-a-time embedded
+ * use; do not call concurrently. It is wiped after each filter, not by
+ * mnv_destroy(). */
 static mnv_act_t conv_scratch[MNV_CNN_CONV_LEN];
 
 /* ── Branchless max (CT, from v1.2 argmax fix) ─────────────────────────────── */
