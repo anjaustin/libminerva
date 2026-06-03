@@ -41,6 +41,12 @@ run_cfg mlp test_engine_mlp.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=16 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# MLP — hidden layer WIDER than input and than layer 0 (per-layer buffer sizing)
+run_cfg mlp_wide test_engine_mlp.c "$ROOT/src/arch/mnv_mlp.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_MLP \
+    -DMNV_INPUT_SIZE=4 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=16 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
+
 # CNN1D
 run_cfg cnn1d test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_CNN1D \
@@ -53,6 +59,12 @@ run_cfg bnn test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
+
+# BNN — hidden layer wider than layer 0 (still multiple of 8: per-layer buffers)
+run_cfg bnn_wide test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
+    -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=16 \
+    -DMNV_OUTPUT_SIZE=8 -DMNV_NUM_LAYERS=3
 
 if [ "$rc" -eq 0 ]; then echo "ALL ENGINE CONFIGS PASSED"; else echo "ENGINE TESTS FAILED"; fi
 exit $rc

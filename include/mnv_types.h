@@ -44,9 +44,9 @@ MNV_STATIC_ASSERT(
     weight_budget_exceeded
 );
 
-/* SRAM budget: largest layer activation buffer must fit */
+/* SRAM budget: widest activation buffer must fit */
 MNV_STATIC_ASSERT(
-    MNV_LAYER_0_SIZE <= MNV_MAX_SRAM_BUDGET,
+    MNV_MAX_ACT_WIDTH <= MNV_MAX_SRAM_BUDGET,
     sram_budget_exceeded
 );
 
@@ -215,7 +215,9 @@ typedef struct {
 #if defined(MNV_ARCH_CNN1D)
 #  define MNV_CTX_BUF_SIZE  (MNV_CNN_NUM_FILTERS * ((MNV_INPUT_SIZE - MNV_CNN_KERNEL_SIZE + 1U) / MNV_CNN_POOL_SIZE))
 #elif defined(MNV_LAYER_0_SIZE)
-#  define MNV_CTX_BUF_SIZE  MNV_LAYER_0_SIZE
+   /* widest activation across input/hidden/output layers — a hidden or output
+    * layer may be wider than layer 0 */
+#  define MNV_CTX_BUF_SIZE  MNV_MAX_ACT_WIDTH
 #else
 #  define MNV_CTX_BUF_SIZE  32U
 #endif
@@ -233,7 +235,8 @@ typedef struct {
 #  define MNV_CNN_FLAT_SZ (MNV_CNN_NUM_FILTERS * ((MNV_INPUT_SIZE - MNV_CNN_KERNEL_SIZE + 1U) / MNV_CNN_POOL_SIZE))
     mnv_weight_t weight_scratch[MNV_OUTPUT_SIZE * MNV_CNN_FLAT_SZ];
 #else
-    mnv_weight_t weight_scratch[MNV_LAYER_0_SIZE * MNV_INPUT_SIZE];
+    /* one layer's weights at a time — sized to the widest layer, not layer 0 */
+    mnv_weight_t weight_scratch[MNV_MAX_LAYER_WEIGHTS];
 #endif
 
     /* Double-run comparison buffer */

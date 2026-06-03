@@ -216,6 +216,23 @@
 #define MNV_CRYPTO_OVERHEAD       (MNV_CHACHA20_IV_SIZE + MNV_BLAKE2S_DIGEST_SIZE)
 #define MNV_NET_WEIGHT_BUDGET     (MNV_MAX_WEIGHT_BYTES - MNV_CRYPTO_OVERHEAD)
 
+/* Compile-time max (integer constant expression — valid for array bounds). */
+#define MNV_MAX2_(a, b)  ((a) > (b) ? (a) : (b))
+
+/* The widest single-layer weight matrix across the (up to 3) dense layers.
+ * A hidden layer can be wider than layer 0, so the decryption scratch must be
+ * sized to the maximum, not to layer 0. */
+#define MNV_MAX_LAYER_WEIGHTS \
+    MNV_MAX2_(MNV_LAYER_0_WEIGHT_COUNT, \
+    MNV_MAX2_(MNV_LAYER_1_WEIGHT_COUNT, MNV_LAYER_2_WEIGHT_COUNT))
+
+/* The widest activation vector that flows through the ping-pong buffers: the
+ * input, every hidden layer, and the output. Any of them may be the widest. */
+#define MNV_MAX_ACT_WIDTH \
+    MNV_MAX2_(MNV_INPUT_SIZE, \
+    MNV_MAX2_(MNV_LAYER_0_SIZE, \
+    MNV_MAX2_(MNV_LAYER_1_SIZE, MNV_OUTPUT_SIZE)))
+
 
 /* =========================================================================
  * v1.1 SECURITY FEATURES

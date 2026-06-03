@@ -64,8 +64,9 @@ mnv_status_t mnv_mlp_forward(mnv_ctx_t          *ctx,
                              weight_bytes);
         ct_offset += weight_bytes;
 
-        /* Decrypt biases */
-        mnv_bias_t bias_scratch[MNV_LAYER_0_SIZE];
+        /* Decrypt biases (one per output neuron; widest layer may exceed
+         * layer 0, so size to the maximum activation width) */
+        mnv_bias_t bias_scratch[MNV_MAX_ACT_WIDTH];
         mnv_chacha20_decrypt(chacha,
                              ct + ct_offset,
                              (uint8_t *)bias_scratch,

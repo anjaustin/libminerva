@@ -99,8 +99,9 @@ static void pack_activations(const mnv_act_t *acts, uint8_t *packed, uint16_t le
  * BNN FORWARD PASS
  * ========================================================================= */
 
-/* Packed activation scratch — ceil(MNV_LAYER_0_SIZE / 8) bytes */
-#define MNV_BNN_PACKED_BYTES  ((MNV_LAYER_0_SIZE + 7u) / 8u)
+/* Packed activation scratch — must hold the widest layer's worth of bits,
+ * not just layer 0 (a hidden layer can be wider). */
+#define MNV_BNN_PACKED_BYTES  ((MNV_MAX_ACT_WIDTH + 7u) / 8u)
 static uint8_t packed_src[MNV_BNN_PACKED_BYTES];
 static uint8_t packed_weights[MNV_BNN_PACKED_BYTES];
 
