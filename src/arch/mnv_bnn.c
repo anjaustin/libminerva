@@ -17,6 +17,11 @@
  *
  * Weight packing: weights[byte] bit k = 1 → w = +1, 0 → w = -1
  * Packed column-major for XNOR efficiency.
+ *
+ * Stream layout per layer (matches the compiler): [packed weights][int8
+ * biases]. The popcount result is scaled to Q8 and the (int8) bias is added
+ * before the activation. The ciphertext offset is tracked across layers so
+ * each layer decrypts the correct bytes.
  */
 
 #include "mnv_bnn.h"
@@ -114,6 +119,13 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
     for (uint16_t i = 0; i < MNV_INPUT_SIZE; i++) src[i] = input[i];
     uint16_t src_size = MNV_INPUT_SIZE;
 
+    /* Ciphertext is a flat stream: [packed W][int8 b] per layer, in order.
+     * The ChaCha context advances the keystream internally; we must advance
+     * the *ciphertext* pointer by the same amount each step or layer >0
+     * decrypts the wrong bytes. */
+    const uint8_t *ct     = model->encrypted_weights;
+    uint16_t       ct_off = 0U;
+
     for (uint8_t layer = 0; layer < model->num_layers; layer++) {
         const mnv_layer_desc_t *ld = &model->layers[layer];
         uint16_t in_sz    = ld->input_size;
@@ -121,8 +133,16 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
         uint16_t w_bytes  = (in_sz * out_sz + 7u) / 8u;
 
         /* Decrypt packed weights */
-        mnv_chacha20_decrypt(chacha, model->encrypted_weights,
+        mnv_chacha20_decrypt(chacha, ct + ct_off,
                              (uint8_t *)ctx->weight_scratch, w_bytes);
+        ct_off += w_bytes;
+
+        /* Decrypt this layer's int8 biases (one per output neuron). */
+        mnv_bias_t bias_scratch[MNV_CTX_BUF_SIZE];
+        uint16_t   bias_bytes = (uint16_t)(out_sz * sizeof(mnv_bias_t));
+        mnv_chacha20_decrypt(chacha, ct + ct_off,
+                             (uint8_t *)bias_scratch, bias_bytes);
+        ct_off += bias_bytes;
 
         /* Pack input activations */
         pack_activations(src, packed_src, in_sz);
@@ -140,6 +160,7 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
 
             /* Scale to Q8: acc ∈ [-in_sz, +in_sz], map to [-127, +127] */
             int16_t scaled = (int16_t)((int32_t)acc * 127 / (int16_t)in_sz);
+            scaled += (int16_t)(int8_t)bias_scratch[n];
             mnv_act_t pre_act = (mnv_act_t)(scaled > 127 ? 127 : (scaled < -128 ? -128 : scaled));
 
             /* BNN uses sign activation for hidden layers, linear for output */
@@ -147,6 +168,7 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
         }
 
         mnv_secure_zero(ctx->weight_scratch, w_bytes);
+        mnv_secure_zero(bias_scratch,   bias_bytes);
         mnv_secure_zero(packed_src,     sizeof(packed_src));
         mnv_secure_zero(packed_weights, sizeof(packed_weights));
 

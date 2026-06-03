@@ -116,10 +116,14 @@
 
 /* #define MNV_QUANT_BINARY   */   /* 1-bit: weights ∈ {-1, +1}        */
 /* #define MNV_QUANT_Q4       */   /* 4-bit fixed point                 */
-#ifndef MNV_QUANT_Q8
+/* #define MNV_QUANT_Q15      */   /* 16-bit, ATmega2560+ only          */
+/* Default to Q8 only if no quantization was selected. (A bare
+ * `#ifndef MNV_QUANT_Q8` would force Q8 on even when BINARY/Q4/Q15 was
+ * requested, since those don't define MNV_QUANT_Q8.) */
+#if !defined(MNV_QUANT_Q8)  && !defined(MNV_QUANT_Q4) && \
+    !defined(MNV_QUANT_Q15) && !defined(MNV_QUANT_BINARY)
 #define MNV_QUANT_Q8           /* 8-bit fixed point (default)       */
 #endif
-/* #define MNV_QUANT_Q15      */   /* 16-bit, ATmega2560+ only          */
 
 #if defined(MNV_FORCE_BINARY)
     #undef MNV_QUANT_Q8

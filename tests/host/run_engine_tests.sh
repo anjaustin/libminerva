@@ -48,5 +48,11 @@ run_cfg cnn1d test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
     -DMNV_CNN_KERNEL_SIZE=4 -DMNV_CNN_NUM_FILTERS=8 -DMNV_CNN_POOL_SIZE=2 \
     -DMNV_CNN_DENSE_SHIFT=9
 
+# BNN — multi-layer, input widths multiple of 8
+run_cfg bnn test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
+    -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
+
 if [ "$rc" -eq 0 ]; then echo "ALL ENGINE CONFIGS PASSED"; else echo "ENGINE TESTS FAILED"; fi
 exit $rc
