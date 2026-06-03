@@ -163,6 +163,6 @@ mnv_status_t mnv_blake2s_verify(const uint8_t *key,    uint8_t  keylen,
     mnv_blake2s_mac(key, keylen, data, datalen, computed);
     uint8_t diff = mnv_ct_compare(computed, expected_mac, MNV_BLAKE2S_DIGEST_SIZE);
     volatile uint8_t *vp = (volatile uint8_t *)computed;
-    for (int i = 0; i < MNV_BLAKE2S_DIGEST_SIZE; i++) vp[i] = 0;
+    for (size_t i = 0; i < MNV_BLAKE2S_DIGEST_SIZE; i++) vp[i] = 0;
     return (diff == 0) ? MNV_OK : MNV_ERR_TAMPER;
 }

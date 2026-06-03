@@ -20,6 +20,18 @@ set(MNV_SOURCES
     src/security/mnv_chacha20.c
     src/security/mnv_blake2s.c
     src/security/mnv_ct.c
+    src/security/mnv_lut.c
+    src/security/mnv_outauth.c
+)
+
+# Internal headers are referenced unqualified across modules
+# (e.g. mnv_engine.c -> "mnv_blake2s.h"), so every src subdir is on the path.
+set(MNV_INCLUDE_DIRS
+    include
+    src/core
+    src/security
+    src/arch
+    src/hal
 )
 
 # Host-specific sources
@@ -27,7 +39,7 @@ if(MNV_TARGET STREQUAL "host")
     list(APPEND MNV_SOURCES src/hal/mnv_hal_host.c)
 
     add_library(minerva STATIC ${MNV_SOURCES})
-    target_include_directories(minerva PUBLIC include src)
+    target_include_directories(minerva PUBLIC ${MNV_INCLUDE_DIRS})
     target_compile_definitions(minerva PUBLIC MNV_TARGET_HOST MNV_ARCH_HOST)
     target_compile_options(minerva PRIVATE -Wall -Wextra -O2 -fsanitize=address,undefined)
     target_link_options(minerva PUBLIC -fsanitize=address,undefined)
