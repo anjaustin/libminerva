@@ -1,0 +1,30 @@
+# ── Build artifacts ─────────────────────────────────────────────────────────
+/build/
+*.o
+*.obj
+*.a
+
+# Host test binaries (built in-tree by the README / manual gcc commands)
+/test_host
+/test_engine_*
+/test_confidence
+*.out
+
+# ── Generated model artifacts — may embed weights; do not commit ────────────
+weights.c
+weights.h
+weights_debug.npz
+calib.npz
+
+# ── Secrets — device keys. NEVER commit. ────────────────────────────────────
+secrets.h
+key.bin
+*.key
+*.pem
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
