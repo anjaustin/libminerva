@@ -83,7 +83,7 @@ static void serialize(uint8_t *pt){
 }
 
 int main(void){
-    printf("[engine BNN %d->%d->%d->%d (multi-layer, widths%%8==0)]\n",IN,H0,H1,OUT);
+    printf("[engine BNN %d->%d->%d->%d (multi-layer)]\n",IN,H0,H1,OUT);
     fill();
     uint8_t key[32]; for(int i=0;i<32;i++)key[i]=(uint8_t)(i*3+9);
     uint8_t nonce[12]={0}; nonce[2]=0x77;

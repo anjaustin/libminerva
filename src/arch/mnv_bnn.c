@@ -33,45 +33,36 @@
 #if defined(MNV_ARCH_BNN)
 
 /* =========================================================================
- * POPCOUNT — constant-time on all targets
- * ========================================================================= */
-
-static uint8_t mnv_popcount8(uint8_t x)
-{
-    /* Brian Kernighan's algorithm — but on AVR, use parallel bit sum */
-    x = x - ((x >> 1) & 0x55u);
-    x = (x & 0x33u) + ((x >> 2) & 0x33u);
-    x = (x + (x >> 4)) & 0x0Fu;
-    return x;
-}
-
-/* =========================================================================
- * BNN DOT PRODUCT
- * Input activations are packed 1 bit per value (1 = +1, 0 = -1).
+ * BNN DOT PRODUCT — bit-addressed
+ *
+ * A neuron's weights occupy bits [n*in_sz, n*in_sz+in_sz) of the packed
+ * layer buffer, which is NOT byte-aligned unless in_sz % 8 == 0. Reading
+ * whole bytes per neuron (the previous approach) mis-aligned the weights for
+ * sub-byte widths and counted the last byte's padding bits as agreements,
+ * underflowing the accumulator. Read each value's bit directly instead:
+ * exactly `len` iterations, no padding, any alignment. Branchless so timing
+ * is data-independent (Law II).
  * ========================================================================= */
 
 /**
- * @brief Binary dot product: sum_i XNOR(w_i, a_i) scaled to {-N..+N}
+ * @brief sum_i (w_i == a_i ? +1 : -1), reading bits directly.
  *
- * @param weights_packed  Packed weight bytes [ceil(len/8)]
- * @param acts_packed     Packed activation bytes [ceil(len/8)]
- * @param len             Number of binary values
- * @return Signed accumulator in range [-len, +len]
+ * @param w       Packed weight bits for the whole layer.
+ * @param w_off   Bit offset of this neuron's first weight (n * in_sz).
+ * @param a        Packed activation bits, starting at bit 0.
+ * @param len     Number of binary values (in_sz).
+ * @return Signed accumulator in range [-len, +len].
  */
-static int16_t bnn_dot_packed(const uint8_t *weights_packed,
-                               const uint8_t *acts_packed,
-                               uint16_t       len)
+static int16_t bnn_dot_bits(const uint8_t *w, uint16_t w_off,
+                            const uint8_t *a, uint16_t len)
 {
-    uint16_t n_bytes = (len + 7u) / 8u;
-    int16_t  acc     = 0;
-
-    for (uint16_t i = 0; i < n_bytes; i++) {
-        /* XNOR: agreement = 1, disagreement = 0 */
-        uint8_t xnor = (uint8_t)~(weights_packed[i] ^ acts_packed[i]);
-        uint8_t agrees = mnv_popcount8(xnor);        /* count +1 agreements */
-        uint8_t n_in_byte = (i < n_bytes - 1) ? 8u : (uint8_t)(((len - 1u) % 8u) + 1u);
-        uint8_t disagrees = n_in_byte - agrees;      /* count -1 agreements */
-        acc += (int16_t)agrees - (int16_t)disagrees;
+    int16_t acc = 0;
+    for (uint16_t i = 0; i < len; i++) {
+        uint16_t wi = (uint16_t)(w_off + i);
+        uint8_t  wb = (uint8_t)((w[wi >> 3] >> (wi & 7u)) & 1u);
+        uint8_t  ab = (uint8_t)((a[i  >> 3] >> (i  & 7u)) & 1u);
+        /* xor==0 -> agree -> +1 ; xor==1 -> disagree -> -1 (branchless) */
+        acc = (int16_t)(acc + 1 - 2 * (int16_t)(wb ^ ab));
     }
     return acc;
 }
@@ -103,7 +94,6 @@ static void pack_activations(const mnv_act_t *acts, uint8_t *packed, uint16_t le
  * not just layer 0 (a hidden layer can be wider). */
 #define MNV_BNN_PACKED_BYTES  ((MNV_MAX_ACT_WIDTH + 7u) / 8u)
 static uint8_t packed_src[MNV_BNN_PACKED_BYTES];
-static uint8_t packed_weights[MNV_BNN_PACKED_BYTES];
 
 mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
                               const mnv_model_t  *model,
@@ -150,14 +140,9 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
 
         /* For each output neuron */
         for (uint16_t n = 0; n < out_sz; n++) {
-            uint16_t w_byte_offset = (n * in_sz) / 8u;
-            /* Extract packed weights for this neuron */
-            uint16_t neuron_bytes = (in_sz + 7u) / 8u;
-            memcpy(packed_weights,
-                   (uint8_t *)ctx->weight_scratch + w_byte_offset,
-                   neuron_bytes);
-
-            int16_t acc = bnn_dot_packed(packed_weights, packed_src, in_sz);
+            /* Weights for neuron n start at bit n*in_sz in the packed buffer. */
+            int16_t acc = bnn_dot_bits((const uint8_t *)ctx->weight_scratch,
+                                       (uint16_t)(n * in_sz), packed_src, in_sz);
 
             /* Scale to Q8: acc ∈ [-in_sz, +in_sz], map to [-127, +127] */
             int16_t scaled = (int16_t)((int32_t)acc * 127 / (int16_t)in_sz);
@@ -171,7 +156,6 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
         mnv_secure_zero(ctx->weight_scratch, w_bytes);
         mnv_secure_zero(bias_scratch,   bias_bytes);
         mnv_secure_zero(packed_src,     sizeof(packed_src));
-        mnv_secure_zero(packed_weights, sizeof(packed_weights));
 
         status = mnv_canary_check(ctx);
         if (status != MNV_OK) return MNV_ERR_GLITCH;

@@ -66,5 +66,11 @@ run_cfg bnn_wide test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=16 \
     -DMNV_OUTPUT_SIZE=8 -DMNV_NUM_LAYERS=3
 
+# BNN — sub-byte input widths (in_sz % 8 != 0: bit-addressed dot product)
+run_cfg bnn_odd test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
+    -DMNV_INPUT_SIZE=5 -DMNV_LAYER_0_SIZE=6 -DMNV_LAYER_1_SIZE=5 \
+    -DMNV_OUTPUT_SIZE=3 -DMNV_NUM_LAYERS=3
+
 if [ "$rc" -eq 0 ]; then echo "ALL ENGINE CONFIGS PASSED"; else echo "ENGINE TESTS FAILED"; fi
 exit $rc
