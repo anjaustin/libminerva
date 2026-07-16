@@ -17,9 +17,11 @@
 
 #define MNV_TARGET_HOST
 #include "minerva.h"
-#include "mnv_ct.h"      /* mnv_ct_argmax lives here pre-Item-3 */
 #include "weights.h"     /* generated: mnv_model + topology macros */
 #include <stdio.h>
+
+/* mnv_ct_argmax is used below straight from the public minerva.h (Item 3) —
+ * no internal header needed, matching the README quick-start. */
 
 #ifndef NUM_INPUTS
 #define NUM_INPUTS 5
@@ -51,6 +53,10 @@ int main(void)
         }
         for (int i = 0; i < (int)MNV_OUTPUT_SIZE; i++)
             printf("%d%s", out[i], (i + 1 < (int)MNV_OUTPUT_SIZE) ? " " : "\n");
+
+        /* Exercise the public-API argmax (result not compared; this is a
+         * compile+run check that the documented consumer path works). */
+        (void)mnv_ct_argmax(out, MNV_OUTPUT_SIZE);
     }
     return 0;
 }

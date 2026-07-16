@@ -237,6 +237,11 @@ a regression test for each fix.
   via `__has_include`, so all TUs converge with zero manual config. Added a
   runtime topology guard in `mnv_init()` as a defense-in-depth backstop
   (`MNV_ERR_CONFIG` on mismatch) and the example Makefile now passes `-I.`.
+- **Public `mnv_ct_argmax` (medium)** — the quick-start consumes the output
+  with `mnv_ct_argmax()`, but it was declared only in the internal
+  `mnv_ct.h`, so the documented snippet didn't compile. It's now in
+  `minerva.h`, documented (constant-time, lowest index wins on ties) and
+  verified against a reference over 200k random vectors.
 
 ---
 
