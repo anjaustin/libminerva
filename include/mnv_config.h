@@ -136,6 +136,22 @@
  * The Python compiler (minerva_compile.py) auto-generates these.
  * ========================================================================= */
 
+/* Auto-adopt a compiler-generated model-dimensions header when one is on the
+ * include path. This is what keeps the ENGINE translation units (which include
+ * only this file) and the APPLICATION translation unit (which includes the
+ * generated weights.h) sized identically. Without it, the engine would fall
+ * back to the defaults below while the application used the model's real
+ * topology, giving mismatched mnv_ctx_t layouts and out-of-bounds buffer
+ * access. Command-line -D definitions still override (the header self-guards
+ * every macro with #ifndef). To use it, put the generated header's directory
+ * on the include path for EVERY translation unit (e.g. add `-I.` — see the
+ * example Makefile). Editing the defaults below by hand remains supported. */
+#if defined(__has_include)
+#  if __has_include("mnv_model_dims.h")
+#    include "mnv_model_dims.h"
+#  endif
+#endif
+
 #ifndef MNV_INPUT_SIZE
 #define MNV_INPUT_SIZE          16U
 #endif

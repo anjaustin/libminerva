@@ -59,17 +59,20 @@ PY
     printf '};\n#define MNV_DEVICE_KEY mnv_device_key_bytes\n#endif\n'
 } > "$TMP/secrets.h"
 
-# 4. compile emitted C + engine (topology passed to every TU; Item 2 removes
-#    the need for these -D once mnv_model_dims.h auto-propagates).
+# 4. compile emitted C + engine. NOTE: no -D topology is passed. The generated
+#    mnv_model_dims.h (in $TMP, on the include path) must propagate the model
+#    shape to EVERY TU via mnv_config.h's __has_include (Item 2). If that
+#    mechanism breaks, the engine TUs revert to the mnv_config.h defaults and
+#    mnv_init()'s topology guard rejects the model (or ASan trips) — either way
+#    this test fails, which is the point.
 INC="-I$ROOT/include -I$ROOT/src/core -I$ROOT/src/security -I$ROOT/src/arch -I$ROOT/src/hal -I$TMP"
-DIMS="-DMNV_INPUT_SIZE=${IN}U -DMNV_LAYER_0_SIZE=${H0}U -DMNV_LAYER_1_SIZE=${H1}U -DMNV_OUTPUT_SIZE=${OUT}U -DMNV_NUM_LAYERS=${NL}U"
 SRC="$ROOT/src/core/mnv_fixed.c $ROOT/src/core/mnv_engine.c $ROOT/src/arch/mnv_mlp.c \
      $ROOT/src/security/mnv_chacha20.c $ROOT/src/security/mnv_blake2s.c \
      $ROOT/src/security/mnv_ct.c $ROOT/src/security/mnv_lut.c \
      $ROOT/src/security/mnv_outauth.c $ROOT/src/hal/mnv_hal_host.c"
 
 if ! $CC -std=c11 -Wall -Wextra -fsanitize=address,undefined -g \
-        -DMNV_TARGET_HOST -DMNV_ARCH_MLP $DIMS -DNUM_INPUTS=$NUM_INPUTS $INC \
+        -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DNUM_INPUTS=$NUM_INPUTS $INC \
         "$ROOT/tests/host/test_compiler_harness.c" "$TMP/weights.c" $SRC \
         -o "$TMP/emit_harness" 2>"$TMP/cc.err"; then
     echo "  BUILD of emitted weights.c FAILED"; cat "$TMP/cc.err"; exit 1

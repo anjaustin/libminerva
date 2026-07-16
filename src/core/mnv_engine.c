@@ -57,10 +57,31 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
     if (!ctx || !model) return MNV_ERR_NULL;
     mnv_secure_zero(ctx, sizeof(mnv_ctx_t));
     if (model->version != MNV_ABI_VERSION)   return MNV_ERR_CONFIG;
-    /* Layer count check only for MLP (CNN1D uses num_layers=0) */
-#if defined(MNV_ARCH_MLP)
+    /* Layer count check for the descriptor-driven architectures (MLP, BNN).
+     * CNN1D uses num_layers=0 and derives its shape from the MNV_CNN_* macros. */
+#if defined(MNV_ARCH_MLP) || defined(MNV_ARCH_BNN)
     if (model->num_layers == 0 ||
         model->num_layers > MNV_NUM_LAYERS)  return MNV_ERR_CONFIG;
+
+    /* Topology-consistency guard (defense-in-depth for compile-time buffer
+     * sizing). The ctx buffers in THIS translation unit are sized from the
+     * MNV_* macros. If the model's real layer widths disagree — e.g. because
+     * the engine was built without the generated mnv_model_dims.h on its
+     * include path — proceeding would read/write past buf_a/buf_b/
+     * weight_scratch. Reject with MNV_ERR_CONFIG instead of corrupting SRAM.
+     * (Layer widths are public topology, not a protected asset, so checking
+     * them before the MAC verification below leaks nothing.) */
+    if (model->layers[0].input_size != MNV_INPUT_SIZE)   return MNV_ERR_CONFIG;
+    if (model->layers[model->num_layers - 1U].output_size != MNV_OUTPUT_SIZE)
+                                                         return MNV_ERR_CONFIG;
+    for (uint8_t li = 0; li < model->num_layers; li++) {
+        uint16_t isz = model->layers[li].input_size;
+        uint16_t osz = model->layers[li].output_size;
+        if (isz > MNV_MAX_ACT_WIDTH || osz > MNV_MAX_ACT_WIDTH)
+                                                         return MNV_ERR_CONFIG;
+        if ((uint32_t)isz * (uint32_t)osz > (uint32_t)MNV_MAX_LAYER_WEIGHTS)
+                                                         return MNV_ERR_CONFIG;
+    }
 #endif
 
     mnv_canary_plant(ctx);

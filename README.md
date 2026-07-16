@@ -68,18 +68,23 @@ security overhead.
 
 ### 1. Configure
 
-Edit `include/mnv_config.h`:
+Pick your target, architecture, and quantization in `include/mnv_config.h`:
 
 ```c
 #define MNV_TARGET_ATMEGA328P
 #define MNV_ARCH_MLP
 #define MNV_QUANT_Q8
-
-#define MNV_INPUT_SIZE    8U
-#define MNV_LAYER_0_SIZE  16U
-#define MNV_LAYER_1_SIZE  8U
-#define MNV_OUTPUT_SIZE   4U
 ```
+
+You do **not** need to hand-write the model topology. The compiler (step 2)
+emits `mnv_model_dims.h`; as long as that file's directory is on the include
+path of **every** translation unit (add `-I.` — see the example Makefile),
+`mnv_config.h` adopts the topology automatically, so the engine objects and
+your application are sized identically. `mnv_init()` also rejects a model whose
+shape disagrees with the compiled-in buffer sizes (`MNV_ERR_CONFIG`), so a
+misconfigured build fails loudly instead of corrupting SRAM. Hand-defining the
+`MNV_*_SIZE` macros (or `-D` flags) still works and overrides the generated
+header.
 
 ### 2. Compile model
 
@@ -224,6 +229,14 @@ a regression test for each fix.
   engine, and checks every output against an independent Python Q8 reference.
   Wired into the `minerva_engine_tests` target (skips cleanly without
   python3/numpy).
+- **Topology propagation (high)** — the engine translation units only ever saw
+  the `mnv_config.h` *default* topology, never the compiled model's, so unless
+  you hand-edited `mnv_config.h` the engine and application disagreed on
+  `mnv_ctx_t` size and buffer bounds (an out-of-bounds read of `input`). The
+  compiler now emits a pure-macro `mnv_model_dims.h`; `mnv_config.h` adopts it
+  via `__has_include`, so all TUs converge with zero manual config. Added a
+  runtime topology guard in `mnv_init()` as a defense-in-depth backstop
+  (`MNV_ERR_CONFIG` on mismatch) and the example Makefile now passes `-I.`.
 
 ---
 

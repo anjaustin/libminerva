@@ -16,8 +16,16 @@ CFLAGS     = -mmcu=$(MCU) -DF_CPU=$(F_CPU) \
              -DMNV_TARGET_ATMEGA328P \
              -Os -std=c11 -Wall -Wextra \
              -ffunction-sections -fdata-sections \
+             -I. \
              -I$(MINERVA)/include \
              -I$(MINERVA)/src
+
+# -I. puts the compiler-generated mnv_model_dims.h on the include path for
+# EVERY translation unit (engine + app), so mnv_config.h adopts the model
+# topology automatically. Without it, the engine objects would be built with
+# the mnv_config.h default sizes while weights.c uses the real model — a
+# silent mnv_ctx_t size mismatch. (mnv_init also rejects a mismatch at runtime
+# with MNV_ERR_CONFIG as a backstop.)
 
 LDFLAGS    = -mmcu=$(MCU) -Wl,--gc-sections
 
