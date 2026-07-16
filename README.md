@@ -211,6 +211,22 @@ A full audit and remediation pass. Highlights:
 
 ---
 
+## Post-1.3 Audit Remediation (v1.3.1)
+
+A second audit pass, remediated item by item with an adversarial red-team and
+a regression test for each fix.
+
+- **Compiler codegen (critical)** — `minerva_compile.py` emitted `}},` (a
+  doubled closing brace) for every layer descriptor, so *every* generated
+  `weights.c` failed to compile — the entire documented model-production path
+  was broken. Fixed. Added `tests/host/test_compiler_emit.sh`, a smoke test
+  that runs the real compiler end to end, compiles its emitted C against the
+  engine, and checks every output against an independent Python Q8 reference.
+  Wired into the `minerva_engine_tests` target (skips cleanly without
+  python3/numpy).
+
+---
+
 ## Python Validation Note
 
 When simulating Q8 inference in Python, use `//128` for the accumulator

@@ -224,7 +224,7 @@ class Compiler:
             act=ACT_MAP.get(layer.activation.lower(),'MNV_ACT_RELU')
             L+=[f'    [{i}] = {{',f'        .input_size  = {layer.in_size}U,',
                 f'        .output_size = {layer.out_size}U,',f'        .activation  = {act},',
-                f'        .weights = NULL,',f'        .biases  = NULL,','    }},']
+                f'        .weights = NULL,',f'        .biases  = NULL,','    },']
         L+=['};','',
             'const mnv_model_t mnv_model = {',
             '    .version           = MNV_ABI_VERSION,',
