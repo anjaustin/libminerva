@@ -53,12 +53,14 @@
  * @param len     Number of binary values (in_sz).
  * @return Signed accumulator in range [-len, +len].
  */
-static int16_t bnn_dot_bits(const uint8_t *w, uint16_t w_off,
+static int16_t bnn_dot_bits(const uint8_t *w, uint32_t w_off,
                             const uint8_t *a, uint16_t len)
 {
     int16_t acc = 0;
     for (uint16_t i = 0; i < len; i++) {
-        uint16_t wi = (uint16_t)(w_off + i);
+        /* uint32: a single layer with in_sz*out_sz >= 65536 bits pushes the
+         * neuron bit offset past uint16 (would wrap and read wrong weights). */
+        uint32_t wi = w_off + (uint32_t)i;
         uint8_t  wb = (uint8_t)((w[wi >> 3] >> (wi & 7u)) & 1u);
         uint8_t  ab = (uint8_t)((a[i  >> 3] >> (i  & 7u)) & 1u);
         /* xor==0 -> agree -> +1 ; xor==1 -> disagree -> -1 (branchless) */
@@ -145,7 +147,7 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
         for (uint16_t n = 0; n < out_sz; n++) {
             /* Weights for neuron n start at bit n*in_sz in the packed buffer. */
             int16_t acc = bnn_dot_bits((const uint8_t *)ctx->weight_scratch,
-                                       (uint16_t)(n * in_sz), packed_src, in_sz);
+                                       (uint32_t)n * (uint32_t)in_sz, packed_src, in_sz);
 
             /* Scale to Q8: acc ∈ [-in_sz, +in_sz], map to [-127, +127] */
             int16_t scaled = (int16_t)((int32_t)acc * 127 / (int16_t)in_sz);

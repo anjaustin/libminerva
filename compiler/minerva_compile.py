@@ -305,6 +305,10 @@ class CnnCompiler:
         self.FLAT,self.OUT=self.dense_w.shape
         self.conv_len=self.input_len-self.K+1
         if self.conv_len<=0: sys.exit(f"CNN: kernel {self.K} > input {self.input_len}")
+        if self.conv_len % self.pool:
+            print(f"[minerva] WARNING: conv_len {self.conv_len} not divisible by pool "
+                  f"{self.pool}; the last {self.conv_len % self.pool} conv output(s) are dropped "
+                  f"(engine and this compiler agree, but check your topology).")
         self.pool_len=self.conv_len//self.pool
         if self.F*self.pool_len!=self.FLAT:
             sys.exit(f"CNN shape mismatch: F*pool_len={self.F*self.pool_len} != dense FLAT={self.FLAT} "

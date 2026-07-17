@@ -302,6 +302,35 @@ a regression test for each fix.
   genuine post-wrap output, reject a tampered one — verified the naive gate
   fails the post-wrap case.
 
+### Red-team pass (post-remediation)
+
+A four-lens adversarial review of the remediation diff surfaced four real defects
+in the changed code, all fixed with load-bearing regression tests:
+
+- **CNN1D `weight_scratch` overflow (memory corruption)** — the engine stages all
+  conv kernels (`F*K` bytes) into `weight_scratch`, which was sized `OUTPUT*FLAT`;
+  `OUTPUT*FLAT ≥ F*K` isn't guaranteed (e.g. a large kernel with few classes), so
+  a valid `.npz` could compile into an out-of-bounds write (UBSan-confirmed). Now
+  sized `max(F*K, FLAT)`. Regression config `cnn1d_bigkernel`.
+- **CNN1D kernel wipe truncation (Law II)** — the post-use scratch wipe cast the
+  length to `uint16`, leaving decrypted kernels resident for >64 KB blobs. Uses the
+  `uint32` length now.
+- **BNN neuron bit-offset wrap** — `bnn_dot_bits` used a `uint16` bit offset, so a
+  single layer with `in*out ≥ 65536` bits read the wrong weights. Widened to
+  `uint32`. Regression config `bnn_bigoffset`.
+- **Attestation lifetime asymmetry** — the input-validation and confidence-check
+  early returns didn't clear `has_output_mac`/`output_mac`, so a rejected inference
+  left the prior attestation live (not a false-accept, but inconsistent). Routed
+  through the fail path. Regression `reject_clears_mac`.
+
+**Known pre-existing issue (not from this work; needs AVR hardware to fix safely):**
+the engine reads model *layer descriptors* (`layers[i].input_size`, …) directly
+rather than via `pgm_read`, while the compiler emits `mnv_layers[] PROGMEM`. On a
+real AVR that reads flash as RAM → garbage layer sizes (the weight blob itself is
+read correctly via `pgm_read_byte`). This affects the whole engine on AVR, not just
+the new topology guard. Fixing it (e.g. emitting `mnv_layers` in RAM, ~30 B) should
+be validated on an actual AVR target.
+
 ---
 
 ## Python Validation Note

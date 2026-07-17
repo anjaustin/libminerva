@@ -178,7 +178,11 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     /* Input validation */
 #if defined(MNV_ENABLE_INPUT_VALIDATION)
     status = mnv_ct_validate_input(input, MNV_INPUT_SIZE);
-    if (status != MNV_OK) { mnv_secure_zero(output, MNV_ACT_BYTES(MNV_OUTPUT_SIZE)); return MNV_ERR_INPUT; }
+    /* Route through fail so a rejected inference uniformly invalidates the
+     * output MAC (has_output_mac=false) and wipes buffers — same as the
+     * glitch/mismatch paths. Otherwise a prior success's attestation would
+     * survive a later rejection (inconsistent per-failure-type behavior). */
+    if (status != MNV_OK) { status = MNV_ERR_INPUT; goto fail; }
 #endif
 
     /* Run 1 */
@@ -213,7 +217,7 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     /* Confidence check */
 #if defined(MNV_ENABLE_CONFIDENCE_CHECK)
     status = mnv_ct_confidence_check(output, MNV_OUTPUT_SIZE);
-    if (status != MNV_OK) { mnv_secure_zero(output, MNV_ACT_BYTES(MNV_OUTPUT_SIZE)); return MNV_ERR_CONFIDENCE; }
+    if (status != MNV_OK) { status = MNV_ERR_CONFIDENCE; goto fail; }  /* uniform invalidation (see input path) */
 #endif
 
     /* v1.1: Output MAC */

@@ -63,6 +63,21 @@ run_cfg cnn1d test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
     -DMNV_CNN_KERNEL_SIZE=4 -DMNV_CNN_NUM_FILTERS=8 -DMNV_CNN_POOL_SIZE=2 \
     -DMNV_CNN_DENSE_SHIFT=9
 
+# CNN1D — kernel blob WIDER than the dense scratch (F*K > OUTPUT*FLAT). Regression
+# for the weight_scratch overflow: in=6,K=5,F=2,pool=2 -> F*K=10 vs OUTPUT*FLAT=2.
+run_cfg cnn1d_bigkernel test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_CNN1D \
+    -DMNV_INPUT_SIZE=6 -DMNV_OUTPUT_SIZE=1 \
+    -DMNV_CNN_KERNEL_SIZE=5 -DMNV_CNN_NUM_FILTERS=2 -DMNV_CNN_POOL_SIZE=2 \
+    -DMNV_CNN_DENSE_SHIFT=7
+
+# BNN — a single layer with in_sz*out_sz >= 65536 bits, so the neuron bit offset
+# (n*in_sz) exceeds uint16. Regression for the bnn_dot_bits offset-wrap fix.
+run_cfg bnn_bigoffset test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
+    -DMNV_INPUT_SIZE=256 -DMNV_LAYER_0_SIZE=264 -DMNV_LAYER_1_SIZE=8 \
+    -DMNV_OUTPUT_SIZE=8 -DMNV_NUM_LAYERS=3
+
 # BNN — multi-layer, input widths multiple of 8
 run_cfg bnn test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
@@ -127,6 +142,12 @@ if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_QUANT_Q15 \
     echo "  BUILD FAILED"; cat "$TMP/q15.berr"; rc=1
 elif ! "$TMP/q15_outauth"; then rc=1; fi
 echo
+
+# A rejected inference must invalidate the output attestation (red-team Fix 4).
+run_cfg reject_clears_mac test_reject_clears_mac.c "$ROOT/src/arch/mnv_mlp.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_MIN_CONFIDENCE=100 \
+    -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
 # Confidence-check threshold semantics (only needs mnv_ct.c; threshold > 0)
 echo "=== confidence ==="

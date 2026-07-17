@@ -100,8 +100,9 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
     uint32_t all_kernels  = (uint32_t)MNV_CNN_NUM_FILTERS * kernel_bytes;
     uint32_t all_biases   = (uint32_t)MNV_CNN_NUM_FILTERS * sizeof(mnv_bias_t);
 
-    /* Decrypt all kernels into a temporary staging area.
-     * We use weight_scratch (large enough: MNV_OUTPUT_SIZE*FLAT_SIZE >= N*K) */
+    /* Decrypt all kernels into a temporary staging area. weight_scratch is
+     * sized to max(F*K, FLAT) (see mnv_types.h), so it always holds all F*K
+     * staged kernel bytes as well as a dense row. */
     mnv_chacha20_decrypt(chacha, ct + ct_off,
                          (uint8_t *)ctx->weight_scratch, all_kernels);
     ct_off += all_kernels;
@@ -128,8 +129,9 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
     }
 
     mnv_secure_zero(conv_bias, sizeof(conv_bias));
-    mnv_secure_zero(ctx->weight_scratch,
-                    (uint16_t)(MNV_CNN_NUM_FILTERS * kernel_bytes));
+    /* Wipe the full staged kernel region — all_kernels is uint32; casting to
+     * uint16 (old) left decrypted kernels resident for blobs > 64 KB (Law II). */
+    mnv_secure_zero(ctx->weight_scratch, all_kernels);
 
     /* ── Dense output layer — one row at a time ── */
     uint32_t flat_bytes = (uint32_t)MNV_CNN_FLAT_SIZE * sizeof(mnv_weight_t);

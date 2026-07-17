@@ -242,7 +242,14 @@ typedef struct {
  * FLAT_SIZE = CNN_NUM_FILTERS * POOL_LEN = CNN_NUM_FILTERS * ((INPUT_SIZE-KERNEL_SIZE+1)/POOL_SIZE) */
 #if defined(MNV_ARCH_CNN1D)
 #  define MNV_CNN_FLAT_SZ (MNV_CNN_NUM_FILTERS * ((MNV_INPUT_SIZE - MNV_CNN_KERNEL_SIZE + 1U) / MNV_CNN_POOL_SIZE))
-    mnv_weight_t weight_scratch[MNV_OUTPUT_SIZE * MNV_CNN_FLAT_SZ];
+#  define MNV_CNN_KERN_SZ (MNV_CNN_NUM_FILTERS * MNV_CNN_KERNEL_SIZE)
+    /* weight_scratch must hold the WIDER of the two things the CNN forward pass
+     * stages into it: ALL conv kernels at once (F*K bytes, decrypted together
+     * in mnv_cnn1d.c) or one dense weight row (FLAT bytes). Sizing it to
+     * OUTPUT*FLAT (old) silently overflowed whenever F*K > OUTPUT*FLAT — e.g. a
+     * large kernel with few output classes (in=6,K=5,F=2,pool=2 → F*K=10 vs
+     * OUTPUT*FLAT=2). Use the true maximum. */
+    mnv_weight_t weight_scratch[MNV_MAX2_(MNV_CNN_KERN_SZ, MNV_CNN_FLAT_SZ)];
 #else
     /* one layer's weights at a time — sized to the widest layer, not layer 0 */
     mnv_weight_t weight_scratch[MNV_MAX_LAYER_WEIGHTS];
