@@ -291,6 +291,16 @@ a regression test for each fix.
   the linear/default path so every activation has the same side-channel shape.
   Regression test observes this via the PRNG advancing by one scan for all four
   activations (verified linear did not advance pre-fix).
+- **Output-MAC counter guard (low)** — `mnv_outauth_verify` computed
+  `counter - 1` with no "has a MAC ever been produced" check. Rather than a
+  naive `counter == 0 → reject` gate (which would wrongly reject a genuine
+  output produced exactly when the counter wraps back to 0 after 2³²
+  inferences — there `counter - 1 == 0xFFFFFFFF` is the correct modular value),
+  added a `has_output_mac` flag that distinguishes "never ran" from "ran,
+  counter wrapped". Cleared on failed inference. Focused test drives
+  compute/verify directly and checks: reject before any inference, accept a
+  genuine post-wrap output, reject a tampered one — verified the naive gate
+  fails the post-wrap case.
 
 ---
 

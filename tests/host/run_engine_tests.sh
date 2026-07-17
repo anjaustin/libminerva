@@ -89,6 +89,20 @@ run_cfg progmem_guard test_progmem_guard.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# Output-MAC counter guard + wraparound (Item 9). Driven against outauth +
+# crypto only; observes via verify() return values.
+echo "=== outauth_counter ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP \
+        -DMNV_INPUT_SIZE=8 -DMNV_OUTPUT_SIZE=4 -DMNV_LAYER_0_SIZE=16 \
+        -DMNV_LAYER_1_SIZE=8 -DMNV_NUM_LAYERS=3 $INC \
+        "$ROOT/tests/host/test_outauth_counter.c" \
+        "$ROOT/src/security/mnv_outauth.c" "$ROOT/src/security/mnv_blake2s.c" \
+        "$ROOT/src/security/mnv_ct.c" \
+        -o "$TMP/outauth_counter" 2>"$TMP/oac.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/oac.berr"; rc=1
+elif ! "$TMP/outauth_counter"; then rc=1; fi
+echo
+
 # Blinded-LUT trace uniformity (Item 8): every activation, including the linear
 # output layer, runs the equalizing masked scan (observed via PRNG advance).
 echo "=== lut_uniform ==="

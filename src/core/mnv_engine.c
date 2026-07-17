@@ -231,6 +231,7 @@ fail:
     mnv_secure_zero(ctx->buf_a,          sizeof(ctx->buf_a));
     mnv_secure_zero(ctx->buf_b,          sizeof(ctx->buf_b));
     mnv_secure_zero(ctx->output_mac,     MNV_OUTPUT_MAC_SIZE);
+    ctx->has_output_mac = false;   /* the MAC we just wiped is not verifiable */
     return status;
 }
 

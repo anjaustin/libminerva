@@ -116,6 +116,14 @@ int main(void) {
     static mnv_ctx_t ctx;
     CHECK(mnv_init(&ctx, &M) == MNV_OK, "init valid model -> OK");
 
+    /* Item 9: verifying an output before any inference (counter == 0) must be
+     * rejected cleanly, not underflow the counter. */
+    {
+        int8_t din[IN] = {0}, dout[OUT] = {0};
+        CHECK(mnv_verify_output(&ctx, din, dout) == MNV_ERR_TAMPER,
+              "verify_output before any run -> TAMPER");
+    }
+
     /* correctness across several inputs */
     int correctness_ok = 1;
     for (int t = 0; t < 8; t++) {
@@ -188,6 +196,11 @@ int main(void) {
         CHECK(mnv_init(&ctx_b2, &Mbad2) == MNV_ERR_CONFIG,
               "init output-width mismatch -> CONFIG");
     }
+
+    /* (The counter-wraparound behavior of the output MAC is covered directly
+     * and reliably in tests/host/test_outauth_counter.c — driving it through
+     * mnv_run here made the assertion hostage to the double-run path and to
+     * compilers caching the white-box ctx read.) */
 
     printf("%s (%d failure[s])\n", fails ? "FAILED" : "ALL PASS", fails);
     return fails;

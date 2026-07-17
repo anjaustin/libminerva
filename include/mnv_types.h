@@ -275,8 +275,11 @@ typedef struct {
     const mnv_model_t *model;
 
     /* State flags */
-    bool        verified;     /* integrity check passed this session */
+    bool        verified;      /* integrity check passed this session */
     bool        initialized;
+    bool        has_output_mac; /* an inference has produced output_mac; lets
+                                 * mnv_outauth_verify tell "never ran" from
+                                 * "ran, counter wrapped" (see mnv_outauth.c) */
 } mnv_ctx_t;
 
 #endif /* MNV_TYPES_H */

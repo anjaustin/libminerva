@@ -96,6 +96,7 @@ void mnv_outauth_compute(mnv_ctx_t       *ctx,
 
     /* Truncate to MNV_OUTPUT_MAC_SIZE bytes */
     memcpy(ctx->output_mac, full_mac, MNV_OUTPUT_MAC_SIZE);
+    ctx->has_output_mac = true;
 
     /* Increment counter — monotonic, wraps at 2^32 */
     ctx->inference_counter++;
@@ -121,7 +122,16 @@ mnv_status_t mnv_outauth_verify(const mnv_ctx_t *ctx,
     uint8_t auth_buf[MNV_AUTH_BUF_SIZE];
     uint8_t full_mac[MNV_BLAKE2S_DIGEST_SIZE];
 
-    /* Use the counter value at the time of the last inference */
+    /* Reject if no inference has ever produced an output MAC. This is the clean
+     * guard for the counter-1 "underflow": we do NOT gate on counter == 0,
+     * because after 2^32 inferences the counter legitimately wraps to 0 and
+     * (counter - 1) == 0xFFFFFFFF is then the CORRECT modular value matching the
+     * compute side — gating on counter would falsely reject that genuine
+     * output. The has_output_mac flag distinguishes "never produced" from
+     * "produced, counter wrapped". */
+    if (!ctx->has_output_mac) return MNV_ERR_TAMPER;
+
+    /* Counter at the time of the last inference (modular; wraps with compute). */
     uint32_t last_counter = ctx->inference_counter - 1U;
 
     build_auth_buffer(output, input, last_counter, auth_buf);
