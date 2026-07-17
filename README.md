@@ -277,6 +277,13 @@ a regression test for each fix.
   transpose) and checks the engine output matches — verified it catches a
   wrong transpose and a wrong section order. The dense right-shift is a
   heuristic (`ceil(log2(FLAT))+7`); calibration is future work.
+- **Branchless clamp (low, Law II)** — `mnv_q8_clamp` was documented
+  constant-time but used `if` branches; the old comment claimed the compiler
+  emits `cmov`, but AVR (the primary target) has no conditional-move
+  instruction, so `-Os` produced real data-dependent branches. Rewrote it with
+  sign-mask select (no branch), verified bit-identical to the reference clamp
+  over the full accumulator domain and that the compiled function contains zero
+  conditional branches.
 
 ---
 
