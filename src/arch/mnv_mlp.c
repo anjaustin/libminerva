@@ -47,15 +47,16 @@ mnv_status_t mnv_mlp_forward(mnv_ctx_t          *ctx,
      * exactly `len` bytes. The compiler emits weights then biases per layer,
      * so we just call decrypt in the same order. */
     const uint8_t *ct = model->encrypted_weights;  /* base pointer */
-    uint16_t       ct_offset = 0;                  /* bytes consumed so far */
+    uint32_t       ct_offset = 0;                  /* bytes consumed so far */
 
     for (uint8_t layer = 0; layer < model->num_layers; layer++) {
 
         const mnv_layer_desc_t *ld = &model->layers[layer];
         uint16_t in_sz        = ld->input_size;
         uint16_t out_sz       = ld->output_size;
-        uint16_t weight_bytes = (uint16_t)((uint32_t)in_sz * out_sz * sizeof(mnv_weight_t));
-        uint16_t bias_bytes   = (uint16_t)(out_sz * sizeof(mnv_bias_t));
+        /* uint32: a single dense layer can exceed 64 KB on large (STM32) models */
+        uint32_t weight_bytes = (uint32_t)in_sz * (uint32_t)out_sz * sizeof(mnv_weight_t);
+        uint32_t bias_bytes   = (uint32_t)out_sz * sizeof(mnv_bias_t);
 
         /* Decrypt weights: row-major, weight[out_neuron * in_sz + in_neuron] */
         mnv_chacha20_decrypt(chacha,

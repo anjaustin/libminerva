@@ -118,13 +118,13 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
      * the *ciphertext* pointer by the same amount each step or layer >0
      * decrypts the wrong bytes. */
     const uint8_t *ct     = model->encrypted_weights;
-    uint16_t       ct_off = 0U;
+    uint32_t       ct_off = 0U;
 
     for (uint8_t layer = 0; layer < model->num_layers; layer++) {
         const mnv_layer_desc_t *ld = &model->layers[layer];
         uint16_t in_sz    = ld->input_size;
         uint16_t out_sz   = ld->output_size;
-        uint16_t w_bytes  = (in_sz * out_sz + 7u) / 8u;
+        uint32_t w_bytes  = ((uint32_t)in_sz * (uint32_t)out_sz + 7u) / 8u;
 
         /* Decrypt packed weights */
         mnv_chacha20_decrypt(chacha, ct + ct_off,

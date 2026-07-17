@@ -57,6 +57,15 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
     if (!ctx || !model) return MNV_ERR_NULL;
     mnv_secure_zero(ctx, sizeof(mnv_ctx_t));
     if (model->version != MNV_ABI_VERSION)   return MNV_ERR_CONFIG;
+#if defined(MNV_PROGMEM_WEIGHTS)
+    /* AVR reads flash weights through 16-bit near pointers (pgm_read_byte), so
+     * the encrypted blob must live in the low 64 KB of flash. Larger models on
+     * AVR need far-pointer access (pgm_read_byte_far + RAMPZ), which is not
+     * implemented. Reject rather than silently wrap the address and compute the
+     * MAC over the wrong bytes. (On flat-memory targets — STM32, host — there
+     * is no such cap and encrypted_len may use the full uint32 range.) */
+    if (model->encrypted_len > 0xFFFFUL)     return MNV_ERR_CONFIG;
+#endif
     /* Layer count check for the descriptor-driven architectures (MLP, BNN).
      * CNN1D uses num_layers=0 and derives its shape from the MNV_CNN_* macros. */
 #if defined(MNV_ARCH_MLP) || defined(MNV_ARCH_BNN)
@@ -98,10 +107,10 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
 #if defined(MNV_PROGMEM_WEIGHTS)
         {
             uint8_t chunk[64];
-            uint16_t remaining = model->encrypted_len;
-            uint16_t offset    = 0;
+            uint32_t remaining = model->encrypted_len;   /* <= 0xFFFF on AVR */
+            uint32_t offset    = 0;
             while (remaining > 0) {
-                uint16_t n = (remaining > 64U) ? 64U : remaining;
+                uint16_t n = (remaining > 64U) ? 64U : (uint16_t)remaining;
                 for (uint16_t i = 0; i < n; i++)
                     chunk[i] = pgm_read_byte(model->encrypted_weights + offset + i);
                 mnv_blake2s_update(&bctx, chunk, n);

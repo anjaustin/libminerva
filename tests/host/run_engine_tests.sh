@@ -47,6 +47,15 @@ run_cfg mlp_wide test_engine_mlp.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=4 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=16 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# MLP — encrypted blob > 64 KB (260*260 layer-0 = 67600 B; total ~69 KB).
+# Regression guard for the uint16 length truncation: pre-fix, encrypted_len,
+# the ChaCha decrypt length, and the ciphertext offset all wrapped at 64 KB,
+# so mnv_init's MAC covered the wrong bytes and rejected a valid model.
+run_cfg mlp_big test_engine_mlp.c "$ROOT/src/arch/mnv_mlp.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_MLP \
+    -DMNV_INPUT_SIZE=260 -DMNV_LAYER_0_SIZE=260 -DMNV_LAYER_1_SIZE=4 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
+
 # CNN1D
 run_cfg cnn1d test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_CNN1D \
@@ -71,6 +80,14 @@ run_cfg bnn_odd test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
     -DMNV_INPUT_SIZE=5 -DMNV_LAYER_0_SIZE=6 -DMNV_LAYER_1_SIZE=5 \
     -DMNV_OUTPUT_SIZE=3 -DMNV_NUM_LAYERS=3
+
+# PROGMEM flash-read path + AVR >64 KB near-pointer guard (Item 4). Forces
+# MNV_PROGMEM_WEIGHTS on (host pgm_read_byte is a no-op) to cover the chunked
+# BLAKE2s read in mnv_init that the true-host configs above no longer exercise.
+run_cfg progmem_guard test_progmem_guard.c "$ROOT/src/arch/mnv_mlp.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_PROGMEM_WEIGHTS \
+    -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
 # Confidence-check threshold semantics (only needs mnv_ct.c; threshold > 0)
 echo "=== confidence ==="

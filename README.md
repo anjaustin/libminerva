@@ -242,6 +242,19 @@ a regression test for each fix.
   `mnv_ct.h`, so the documented snippet didn't compile. It's now in
   `minerva.h`, documented (constant-time, lowest index wins on ties) and
   verified against a reference over 200k random vectors.
+- **64 KB model ceiling (medium)** — `encrypted_len` and the BLAKE2s/ChaCha20
+  length parameters were `uint16_t`, silently truncating any model over 64 KB
+  (the advertised STM32F4 ~800K-param target needs far more). The whole blob-
+  length path is now `uint32_t`, so flat-memory targets (STM32, host) handle
+  large models correctly; a regression test runs a ~69 KB MLP end to end. On
+  AVR (16-bit near flash pointers) `mnv_init()` now rejects a >64 KB blob with
+  `MNV_ERR_CONFIG` instead of wrapping (see Supported Targets †).
+- **Target selection precedence (surfaced during remediation)** — the hard
+  `#define MNV_TARGET_ATMEGA328P` in `mnv_config.h` was unconditional, so
+  `-DMNV_TARGET_HOST` (and every other `-D` target) was silently ignored and
+  host builds ran under ATmega constraints. The default is now guarded so an
+  explicit command-line target wins; ATmega328P remains the default when none
+  is given.
 
 ---
 
@@ -369,9 +382,18 @@ bash tests/host/run_engine_tests.sh
 |---|---|---|---|---|
 | ATtiny85 | 8 KB | 512 B | ~2K (BNN only) | ✓ |
 | ATmega328P | 32 KB | 2 KB | ~14K | ✓ |
-| ATmega2560 | 256 KB | 8 KB | ~200K | ✓ |
+| ATmega2560 | 256 KB | 8 KB | ~200K † | ✓ |
 | STM32F0 | 64 KB | 8 KB | ~40K | ✓ |
 | STM32F4 | 1 MB | 192 KB | ~800K | ✓ |
+
+**† AVR 64 KB blob limit.** AVR reads flash weights through 16-bit near
+pointers (`pgm_read_byte`), so a single encrypted weight blob must fit in the
+low 64 KB of flash. `mnv_init()` rejects a larger blob on AVR with
+`MNV_ERR_CONFIG` rather than wrapping the address. The flat-memory targets
+(STM32F0/F4, host) have no such limit — the blob length is a full 32-bit
+value throughout. Models above 64 KB on ATmega2560 (which spans multiple flash
+banks) need far-pointer access (`pgm_read_byte_far` + `RAMPZ`), which is not
+yet implemented; split such models or use an STM32 target.
 
 ---
 

@@ -87,7 +87,8 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
 {
     mnv_status_t status;
     const uint8_t *ct     = model->encrypted_weights;
-    uint16_t       ct_off = 0U;   /* FIX Bug 10: track ciphertext offset */
+    uint32_t       ct_off = 0U;   /* FIX Bug 10: track ciphertext offset (uint32:
+                                   * blob may exceed 64 KB on flat-memory targets) */
 
     mnv_act_t *feat_map = ctx->buf_a;   /* [MNV_CNN_FLAT_SIZE] */
 
@@ -95,9 +96,9 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
     /* Blob layout: [K0 K1 ... KN] then [b0 b1 ... bN]        */
     /* Match compile_cnn1d.py which emits kernels flat, then biases flat */
 
-    uint16_t kernel_bytes = (uint16_t)(MNV_CNN_KERNEL_SIZE * sizeof(mnv_weight_t));
-    uint16_t all_kernels  = (uint16_t)(MNV_CNN_NUM_FILTERS * kernel_bytes);
-    uint16_t all_biases   = (uint16_t)(MNV_CNN_NUM_FILTERS * sizeof(mnv_bias_t));
+    uint32_t kernel_bytes = (uint32_t)MNV_CNN_KERNEL_SIZE * sizeof(mnv_weight_t);
+    uint32_t all_kernels  = (uint32_t)MNV_CNN_NUM_FILTERS * kernel_bytes;
+    uint32_t all_biases   = (uint32_t)MNV_CNN_NUM_FILTERS * sizeof(mnv_bias_t);
 
     /* Decrypt all kernels into a temporary staging area.
      * We use weight_scratch (large enough: MNV_OUTPUT_SIZE*FLAT_SIZE >= N*K) */
@@ -131,7 +132,7 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
                     (uint16_t)(MNV_CNN_NUM_FILTERS * kernel_bytes));
 
     /* ── Dense output layer — one row at a time ── */
-    uint16_t flat_bytes = (uint16_t)(MNV_CNN_FLAT_SIZE * sizeof(mnv_weight_t));
+    uint32_t flat_bytes = (uint32_t)MNV_CNN_FLAT_SIZE * sizeof(mnv_weight_t);
 
     for (uint16_t n = 0U; n < MNV_OUTPUT_SIZE; n++) {
         mnv_chacha20_decrypt(chacha, ct + ct_off,

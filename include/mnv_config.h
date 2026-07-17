@@ -22,7 +22,16 @@
  * Uncomment exactly one target.
  * ========================================================================= */
 
+/* Uncomment exactly one target below, OR pass one as -DMNV_TARGET_xxx.
+ * An explicit command-line target now wins: previously the hard #define here
+ * was unconditional, so -DMNV_TARGET_HOST silently still built under ATmega
+ * constraints (14 KB budget, PROGMEM path). The guard keeps ATmega328P as the
+ * default when nothing is specified. */
+#if !defined(MNV_TARGET_ATMEGA328P) && !defined(MNV_TARGET_ATMEGA2560) && \
+    !defined(MNV_TARGET_ATTINY85)   && !defined(MNV_TARGET_STM32F0)   && \
+    !defined(MNV_TARGET_STM32F4)    && !defined(MNV_TARGET_HOST)
 #define MNV_TARGET_ATMEGA328P
+#endif
 /* #define MNV_TARGET_ATMEGA2560   */
 /* #define MNV_TARGET_ATTINY85     */
 /* #define MNV_TARGET_STM32F0      */

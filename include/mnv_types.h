@@ -181,8 +181,8 @@ typedef struct {
     uint8_t  iv[MNV_CHACHA20_IV_SIZE];      /* ChaCha20 nonce             */
     uint8_t  mac[MNV_BLAKE2S_DIGEST_SIZE];  /* BLAKE2s over ciphertext    */
                                             /* (encrypt-then-MAC)         */
-    uint16_t weight_count;                  /* number of weights         */
-    uint16_t bias_count;                    /* number of biases          */
+    uint32_t weight_count;                  /* number of weights         */
+    uint32_t bias_count;                    /* number of biases          */
 } mnv_crypto_header_t;
 
 /* =========================================================================
@@ -198,7 +198,9 @@ typedef struct {
     const mnv_crypto_header_t *crypto;      /* crypto header for weight blob     */
     const uint8_t       *key;               /* 256-bit ChaCha20 key (from fuse/KDF)*/
     const uint8_t       *encrypted_weights; /* entire encrypted weight blob      */
-    uint16_t             encrypted_len;
+    uint32_t             encrypted_len;     /* blob length in bytes (up to 4 GB; */
+                                            /* AVR near-PROGMEM caps this at 64 KB,*/
+                                            /* enforced at mnv_init())            */
 } mnv_model_t;
 
 #define MNV_ABI_VERSION  0x01U

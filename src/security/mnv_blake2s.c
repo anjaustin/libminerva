@@ -111,11 +111,13 @@ void mnv_blake2s_init(mnv_blake2s_ctx_t *ctx,
 
 void mnv_blake2s_update(mnv_blake2s_ctx_t *ctx,
                         const uint8_t     *data,
-                        uint16_t           len)
+                        uint32_t           len)
 {
     while (len > 0) {
+        /* fill <= 64 always (buflen < 64), so it fits uint16_t even though
+         * len may be up to 4 GB. */
         uint16_t fill = (uint16_t)(64 - ctx->buflen);
-        if (fill > len) fill = len;
+        if ((uint32_t)fill > len) fill = (uint16_t)len;
         memcpy(ctx->buf + ctx->buflen, data, fill);
         ctx->buflen += fill;
         data += fill;
@@ -146,7 +148,7 @@ void mnv_blake2s_final(mnv_blake2s_ctx_t *ctx, uint8_t *digest)
 }
 
 void mnv_blake2s_mac(const uint8_t *key,    uint8_t  keylen,
-                     const uint8_t *data,   uint16_t datalen,
+                     const uint8_t *data,   uint32_t datalen,
                      uint8_t       *digest)
 {
     mnv_blake2s_ctx_t ctx;
@@ -156,7 +158,7 @@ void mnv_blake2s_mac(const uint8_t *key,    uint8_t  keylen,
 }
 
 mnv_status_t mnv_blake2s_verify(const uint8_t *key,    uint8_t  keylen,
-                                const uint8_t *data,   uint16_t datalen,
+                                const uint8_t *data,   uint32_t datalen,
                                 const uint8_t *expected_mac)
 {
     uint8_t computed[MNV_BLAKE2S_DIGEST_SIZE];
