@@ -46,22 +46,29 @@
  * Total:  OUTPUT_SIZE + INPUT_SIZE + 4 bytes
  * ========================================================================= */
 
-#define MNV_AUTH_BUF_SIZE  (MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 4U)
+/* Byte lengths — mnv_act_t is 2 bytes under Q15, so the MAC input must be
+ * sized and laid out in BYTES, not element counts. Using element counts left
+ * the upper half of every Q15 output/input element outside the MAC, so those
+ * bytes could be tampered undetected. */
+#define MNV_AUTH_OUT_BYTES (MNV_OUTPUT_SIZE * sizeof(mnv_act_t))
+#define MNV_AUTH_IN_BYTES  (MNV_INPUT_SIZE  * sizeof(mnv_act_t))
+#define MNV_AUTH_BUF_SIZE  (MNV_AUTH_OUT_BYTES + MNV_AUTH_IN_BYTES + 4U)
 
 static void build_auth_buffer(const mnv_act_t *output,
                                const mnv_act_t *input,
                                uint32_t         counter,
                                uint8_t         *buf)
 {
-    /* Output vector */
-    memcpy(buf, output, MNV_OUTPUT_SIZE);
-    /* Input vector */
-    memcpy(buf + MNV_OUTPUT_SIZE, input, MNV_INPUT_SIZE);
+    /* Output vector (full byte width) */
+    memcpy(buf, output, MNV_AUTH_OUT_BYTES);
+    /* Input vector (full byte width) */
+    memcpy(buf + MNV_AUTH_OUT_BYTES, input, MNV_AUTH_IN_BYTES);
     /* Counter — little-endian */
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 0] = (uint8_t)(counter);
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 1] = (uint8_t)(counter >> 8);
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 2] = (uint8_t)(counter >> 16);
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 3] = (uint8_t)(counter >> 24);
+    uint8_t *c = buf + MNV_AUTH_OUT_BYTES + MNV_AUTH_IN_BYTES;
+    c[0] = (uint8_t)(counter);
+    c[1] = (uint8_t)(counter >> 8);
+    c[2] = (uint8_t)(counter >> 16);
+    c[3] = (uint8_t)(counter >> 24);
 }
 
 /* =========================================================================

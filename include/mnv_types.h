@@ -103,6 +103,12 @@ MNV_STATIC_ASSERT(
     #define MNV_Q_MAX       1
 #endif
 
+/* Byte length of a vector of N activation elements. mnv_act_t is 1 byte for
+ * Q8/Q4/binary but 2 bytes for Q15, so ANY byte-oriented operation over an
+ * activation vector — memcpy, mnv_secure_zero, mnv_ct_compare — must use this,
+ * NOT the raw element count (which would cover only half a Q15 vector). */
+#define MNV_ACT_BYTES(n)  ((size_t)(n) * sizeof(mnv_act_t))
+
 /* =========================================================================
  * STATUS CODES
  * Every public function returns mnv_status_t.

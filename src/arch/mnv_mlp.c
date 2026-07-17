@@ -98,7 +98,7 @@ mnv_status_t mnv_mlp_forward(mnv_ctx_t          *ctx,
         /* Canary check after every layer */
         status = mnv_canary_check(ctx);
         if (status != MNV_OK) {
-            mnv_secure_zero(dst, out_sz);
+            mnv_secure_zero(dst, MNV_ACT_BYTES(out_sz));
             return MNV_ERR_GLITCH;
         }
 

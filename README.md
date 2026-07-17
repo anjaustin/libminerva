@@ -255,6 +255,16 @@ a regression test for each fix.
   host builds ran under ATmega constraints. The default is now guarded so an
   explicit command-line target wins; ATmega328P remains the default when none
   is given.
+- **Q15 byte-length confusion (medium)** — under Q15 `mnv_act_t` is 2 bytes, but
+  the double-run compare, the output/scratch zeroing, and (security-relevant)
+  the output-MAC buffer treated `MNV_*_SIZE` element counts as byte counts, so
+  the upper byte of every Q15 element sat outside the MAC and could be tampered
+  undetected. Added an `MNV_ACT_BYTES(n)` helper and switched all byte-oriented
+  vector operations to it. Regression test flips the high byte of a Q15
+  output/input element and confirms the MAC now catches it (verified it is
+  missed pre-fix). Note: full Q15 *forward-pass arithmetic* (the dot product
+  still narrows to int8 internally) remains future work — this fix is the
+  byte-length/authentication correctness, which applies whenever Q15 is used.
 
 ---
 

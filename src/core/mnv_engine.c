@@ -178,7 +178,7 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     /* Input validation */
 #if defined(MNV_ENABLE_INPUT_VALIDATION)
     status = mnv_ct_validate_input(input, MNV_INPUT_SIZE);
-    if (status != MNV_OK) { mnv_secure_zero(output, MNV_OUTPUT_SIZE); return MNV_ERR_INPUT; }
+    if (status != MNV_OK) { mnv_secure_zero(output, MNV_ACT_BYTES(MNV_OUTPUT_SIZE)); return MNV_ERR_INPUT; }
 #endif
 
     /* Run 1 */
@@ -200,8 +200,8 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
         if (status != MNV_OK) goto fail;
         uint8_t diff = mnv_ct_compare((const uint8_t *)output,
                                        (const uint8_t *)ctx->run2_buf,
-                                       MNV_OUTPUT_SIZE);
-        mnv_secure_zero(ctx->run2_buf, MNV_OUTPUT_SIZE);
+                                       MNV_ACT_BYTES(MNV_OUTPUT_SIZE));
+        mnv_secure_zero(ctx->run2_buf, MNV_ACT_BYTES(MNV_OUTPUT_SIZE));
         if (diff != 0U) { status = MNV_ERR_MISMATCH; goto fail; }
     }
 #endif
@@ -213,7 +213,7 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     /* Confidence check */
 #if defined(MNV_ENABLE_CONFIDENCE_CHECK)
     status = mnv_ct_confidence_check(output, MNV_OUTPUT_SIZE);
-    if (status != MNV_OK) { mnv_secure_zero(output, MNV_OUTPUT_SIZE); return MNV_ERR_CONFIDENCE; }
+    if (status != MNV_OK) { mnv_secure_zero(output, MNV_ACT_BYTES(MNV_OUTPUT_SIZE)); return MNV_ERR_CONFIDENCE; }
 #endif
 
     /* v1.1: Output MAC */
@@ -226,7 +226,7 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
 fail_glitch:
     status = MNV_ERR_GLITCH;
 fail:
-    mnv_secure_zero(output,              MNV_OUTPUT_SIZE);
+    mnv_secure_zero(output,              MNV_ACT_BYTES(MNV_OUTPUT_SIZE));
     mnv_secure_zero(ctx->weight_scratch, sizeof(ctx->weight_scratch));
     mnv_secure_zero(ctx->buf_a,          sizeof(ctx->buf_a));
     mnv_secure_zero(ctx->buf_b,          sizeof(ctx->buf_b));

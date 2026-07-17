@@ -167,8 +167,8 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
     return MNV_OK;
 
 fail:
-    mnv_secure_zero(output,             MNV_OUTPUT_SIZE * sizeof(mnv_act_t));
-    mnv_secure_zero(feat_map,           MNV_CNN_FLAT_SIZE);
+    mnv_secure_zero(output,             MNV_ACT_BYTES(MNV_OUTPUT_SIZE));
+    mnv_secure_zero(feat_map,           MNV_ACT_BYTES(MNV_CNN_FLAT_SIZE));
     mnv_secure_zero(ctx->weight_scratch, sizeof(ctx->weight_scratch));
     mnv_secure_zero(conv_scratch,        sizeof(conv_scratch));
     return MNV_ERR_GLITCH;

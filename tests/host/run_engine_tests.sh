@@ -89,6 +89,21 @@ run_cfg progmem_guard test_progmem_guard.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# Q15 output-MAC byte coverage (Item 5). Q15 makes mnv_act_t 2 bytes; the MAC
+# must cover the full vector, not just the low half. Built against outauth +
+# crypto only (not the full Q15 forward path).
+echo "=== q15_outauth ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_QUANT_Q15 \
+        -DMNV_INPUT_SIZE=4 -DMNV_OUTPUT_SIZE=4 -DMNV_LAYER_0_SIZE=4 \
+        -DMNV_LAYER_1_SIZE=4 -DMNV_NUM_LAYERS=3 $INC \
+        "$ROOT/tests/host/test_q15_outauth.c" \
+        "$ROOT/src/security/mnv_outauth.c" "$ROOT/src/security/mnv_blake2s.c" \
+        "$ROOT/src/security/mnv_ct.c" \
+        -o "$TMP/q15_outauth" 2>"$TMP/q15.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/q15.berr"; rc=1
+elif ! "$TMP/q15_outauth"; then rc=1; fi
+echo
+
 # Confidence-check threshold semantics (only needs mnv_ct.c; threshold > 0)
 echo "=== confidence ==="
 if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_MIN_CONFIDENCE=20 $INC \
