@@ -89,6 +89,16 @@ run_cfg progmem_guard test_progmem_guard.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# Blinded-LUT trace uniformity (Item 8): every activation, including the linear
+# output layer, runs the equalizing masked scan (observed via PRNG advance).
+echo "=== lut_uniform ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_ENABLE_BLINDED_LUT $INC \
+        "$ROOT/tests/host/test_lut_uniform.c" "$ROOT/src/security/mnv_lut.c" \
+        -o "$TMP/lut_uniform" 2>"$TMP/lut.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/lut.berr"; rc=1
+elif ! "$TMP/lut_uniform"; then rc=1; fi
+echo
+
 # Q15 output-MAC byte coverage (Item 5). Q15 makes mnv_act_t 2 bytes; the MAC
 # must cover the full vector, not just the low half. Built against outauth +
 # crypto only (not the full Q15 forward path).

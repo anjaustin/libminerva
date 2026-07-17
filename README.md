@@ -284,6 +284,13 @@ a regression test for each fix.
   sign-mask select (no branch), verified bit-identical to the reference clamp
   over the full accumulator domain and that the compiled function contains zero
   conditional branches.
+- **Blinded-LUT output-layer uniformity (low, Law II)** — sigmoid/tanh/relu
+  each ran a 256-entry masked scan, but the linear output-layer activation
+  returned immediately with no scan, making the output layer distinguishable on
+  a power/timing trace. Factored out the equalizing dummy scan and applied it to
+  the linear/default path so every activation has the same side-channel shape.
+  Regression test observes this via the PRNG advancing by one scan for all four
+  activations (verified linear did not advance pre-fix).
 
 ---
 
