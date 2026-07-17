@@ -9,8 +9,8 @@
  *           offset 0 (MLP engine uses ct+ct_offset pattern correctly;
  *           CNN1D was missing it entirely)
  *
- * Weight blob layout (must match compiler output exactly):
- *   [kernel_f0[0..K-1] | ... | kernel_fN[0..K-1]]   N*K bytes
+ * Weight blob layout (must match minerva_compile.py CnnCompiler exactly):
+ *   [kernel_f0[0..K-1] | ... | kernel_fN[0..K-1]]   N*K bytes  (filter-major)
  *   [conv_bias[0..N-1]]                              N bytes
  *   [dense_W.T row-major]                            OUTPUT*FLAT bytes
  *   [dense_bias[0..OUTPUT-1]]                        OUTPUT bytes
@@ -94,7 +94,7 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
 
     /* ── Conv block: all kernels first, then all biases ── */
     /* Blob layout: [K0 K1 ... KN] then [b0 b1 ... bN]        */
-    /* Match compile_cnn1d.py which emits kernels flat, then biases flat */
+    /* Matches minerva_compile.py CnnCompiler: kernels flat, then biases flat */
 
     uint32_t kernel_bytes = (uint32_t)MNV_CNN_KERNEL_SIZE * sizeof(mnv_weight_t);
     uint32_t all_kernels  = (uint32_t)MNV_CNN_NUM_FILTERS * kernel_bytes;

@@ -265,6 +265,18 @@ a regression test for each fix.
   missed pre-fix). Note: full Q15 *forward-pass arithmetic* (the dot product
   still narrows to int8 internally) remains future work — this fix is the
   byte-length/authentication correctness, which applies whenever Q15 is used.
+- **CNN1D compiler path (low)** — the 1D-CNN architecture shipped in the engine
+  but had no compiler, and `mnv_cnn1d.c` referenced a non-existent
+  `compile_cnn1d.py`, so CNN1D models could only be hand-authored in C.
+  `minerva_compile.py` now compiles a 1D-CNN when the `.npz` contains a
+  `conv_w` key, emitting the exact `[kernels][conv_bias][dense_Wᵀ][dense_bias]`
+  blob the engine reads (num_layers = 0, shape from `mnv_model_dims.h`). npz
+  schema: `conv_w [F,K]`, `conv_b [F]`, `dense_w [FLAT,OUT]`, `dense_b [OUT]`,
+  scalars `input_len`, `pool_size`. Build with `-DMNV_ARCH_CNN1D -I<out>`. A
+  compiler-emit test quantizes the float model independently (its own
+  transpose) and checks the engine output matches — verified it catches a
+  wrong transpose and a wrong section order. The dense right-shift is a
+  heuristic (`ceil(log2(FLAT))+7`); calibration is future work.
 
 ---
 

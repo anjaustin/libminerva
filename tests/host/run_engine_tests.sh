@@ -113,10 +113,12 @@ if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_MIN_CONFIDENCE=20 $INC \
 elif ! "$TMP/confidence"; then rc=1; fi
 echo
 
-# Compiler-emit smoke test — runs the real minerva_compile.py end to end and
-# compiles + checks its emitted weights.c against a Python reference. Skips
-# cleanly if python3/numpy are unavailable.
-if ! bash "$ROOT/tests/host/test_compiler_emit.sh"; then rc=1; fi
+# Compiler-emit smoke tests — run the real minerva_compile.py end to end and
+# compile + check its emitted weights.c against a Python reference (MLP and
+# CNN1D paths). Skip cleanly if python3/numpy are unavailable.
+if ! bash "$ROOT/tests/host/test_compiler_emit.sh";     then rc=1; fi
+echo
+if ! bash "$ROOT/tests/host/test_compiler_emit_cnn.sh"; then rc=1; fi
 echo
 
 if [ "$rc" -eq 0 ]; then echo "ALL ENGINE CONFIGS PASSED"; else echo "ENGINE TESTS FAILED"; fi
