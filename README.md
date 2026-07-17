@@ -68,18 +68,23 @@ security overhead.
 
 ### 1. Configure
 
-Edit `include/mnv_config.h`:
+Pick your target, architecture, and quantization in `include/mnv_config.h`:
 
 ```c
 #define MNV_TARGET_ATMEGA328P
 #define MNV_ARCH_MLP
 #define MNV_QUANT_Q8
-
-#define MNV_INPUT_SIZE    8U
-#define MNV_LAYER_0_SIZE  16U
-#define MNV_LAYER_1_SIZE  8U
-#define MNV_OUTPUT_SIZE   4U
 ```
+
+You do **not** need to hand-write the model topology. The compiler (step 2)
+emits `mnv_model_dims.h`; as long as that file's directory is on the include
+path of **every** translation unit (add `-I.` — see the example Makefile),
+`mnv_config.h` adopts the topology automatically, so the engine objects and
+your application are sized identically. `mnv_init()` also rejects a model whose
+shape disagrees with the compiled-in buffer sizes (`MNV_ERR_CONFIG`), so a
+misconfigured build fails loudly instead of corrupting SRAM. Hand-defining the
+`MNV_*_SIZE` macros (or `-D` flags) still works and overrides the generated
+header.
 
 ### 2. Compile model
 
@@ -211,6 +216,123 @@ A full audit and remediation pass. Highlights:
 
 ---
 
+## Post-1.3 Audit Remediation (v1.3.1)
+
+A second audit pass, remediated item by item with an adversarial red-team and
+a regression test for each fix.
+
+- **Compiler codegen (critical)** — `minerva_compile.py` emitted `}},` (a
+  doubled closing brace) for every layer descriptor, so *every* generated
+  `weights.c` failed to compile — the entire documented model-production path
+  was broken. Fixed. Added `tests/host/test_compiler_emit.sh`, a smoke test
+  that runs the real compiler end to end, compiles its emitted C against the
+  engine, and checks every output against an independent Python Q8 reference.
+  Wired into the `minerva_engine_tests` target (skips cleanly without
+  python3/numpy).
+- **Topology propagation (high)** — the engine translation units only ever saw
+  the `mnv_config.h` *default* topology, never the compiled model's, so unless
+  you hand-edited `mnv_config.h` the engine and application disagreed on
+  `mnv_ctx_t` size and buffer bounds (an out-of-bounds read of `input`). The
+  compiler now emits a pure-macro `mnv_model_dims.h`; `mnv_config.h` adopts it
+  via `__has_include`, so all TUs converge with zero manual config. Added a
+  runtime topology guard in `mnv_init()` as a defense-in-depth backstop
+  (`MNV_ERR_CONFIG` on mismatch) and the example Makefile now passes `-I.`.
+- **Public `mnv_ct_argmax` (medium)** — the quick-start consumes the output
+  with `mnv_ct_argmax()`, but it was declared only in the internal
+  `mnv_ct.h`, so the documented snippet didn't compile. It's now in
+  `minerva.h`, documented (constant-time, lowest index wins on ties) and
+  verified against a reference over 200k random vectors.
+- **64 KB model ceiling (medium)** — `encrypted_len` and the BLAKE2s/ChaCha20
+  length parameters were `uint16_t`, silently truncating any model over 64 KB
+  (the advertised STM32F4 ~800K-param target needs far more). The whole blob-
+  length path is now `uint32_t`, so flat-memory targets (STM32, host) handle
+  large models correctly; a regression test runs a ~69 KB MLP end to end. On
+  AVR (16-bit near flash pointers) `mnv_init()` now rejects a >64 KB blob with
+  `MNV_ERR_CONFIG` instead of wrapping (see Supported Targets †).
+- **Target selection precedence (surfaced during remediation)** — the hard
+  `#define MNV_TARGET_ATMEGA328P` in `mnv_config.h` was unconditional, so
+  `-DMNV_TARGET_HOST` (and every other `-D` target) was silently ignored and
+  host builds ran under ATmega constraints. The default is now guarded so an
+  explicit command-line target wins; ATmega328P remains the default when none
+  is given.
+- **Q15 byte-length confusion (medium)** — under Q15 `mnv_act_t` is 2 bytes, but
+  the double-run compare, the output/scratch zeroing, and (security-relevant)
+  the output-MAC buffer treated `MNV_*_SIZE` element counts as byte counts, so
+  the upper byte of every Q15 element sat outside the MAC and could be tampered
+  undetected. Added an `MNV_ACT_BYTES(n)` helper and switched all byte-oriented
+  vector operations to it. Regression test flips the high byte of a Q15
+  output/input element and confirms the MAC now catches it (verified it is
+  missed pre-fix). Note: full Q15 *forward-pass arithmetic* (the dot product
+  still narrows to int8 internally) remains future work — this fix is the
+  byte-length/authentication correctness, which applies whenever Q15 is used.
+- **CNN1D compiler path (low)** — the 1D-CNN architecture shipped in the engine
+  but had no compiler, and `mnv_cnn1d.c` referenced a non-existent
+  `compile_cnn1d.py`, so CNN1D models could only be hand-authored in C.
+  `minerva_compile.py` now compiles a 1D-CNN when the `.npz` contains a
+  `conv_w` key, emitting the exact `[kernels][conv_bias][dense_Wᵀ][dense_bias]`
+  blob the engine reads (num_layers = 0, shape from `mnv_model_dims.h`). npz
+  schema: `conv_w [F,K]`, `conv_b [F]`, `dense_w [FLAT,OUT]`, `dense_b [OUT]`,
+  scalars `input_len`, `pool_size`. Build with `-DMNV_ARCH_CNN1D -I<out>`. A
+  compiler-emit test quantizes the float model independently (its own
+  transpose) and checks the engine output matches — verified it catches a
+  wrong transpose and a wrong section order. The dense right-shift is a
+  heuristic (`ceil(log2(FLAT))+7`); calibration is future work.
+- **Branchless clamp (low, Law II)** — `mnv_q8_clamp` was documented
+  constant-time but used `if` branches; the old comment claimed the compiler
+  emits `cmov`, but AVR (the primary target) has no conditional-move
+  instruction, so `-Os` produced real data-dependent branches. Rewrote it with
+  sign-mask select (no branch), verified bit-identical to the reference clamp
+  over the full accumulator domain and that the compiled function contains zero
+  conditional branches.
+- **Blinded-LUT output-layer uniformity (low, Law II)** — sigmoid/tanh/relu
+  each ran a 256-entry masked scan, but the linear output-layer activation
+  returned immediately with no scan, making the output layer distinguishable on
+  a power/timing trace. Factored out the equalizing dummy scan and applied it to
+  the linear/default path so every activation has the same side-channel shape.
+  Regression test observes this via the PRNG advancing by one scan for all four
+  activations (verified linear did not advance pre-fix).
+- **Output-MAC counter guard (low)** — `mnv_outauth_verify` computed
+  `counter - 1` with no "has a MAC ever been produced" check. Rather than a
+  naive `counter == 0 → reject` gate (which would wrongly reject a genuine
+  output produced exactly when the counter wraps back to 0 after 2³²
+  inferences — there `counter - 1 == 0xFFFFFFFF` is the correct modular value),
+  added a `has_output_mac` flag that distinguishes "never ran" from "ran,
+  counter wrapped". Cleared on failed inference. Focused test drives
+  compute/verify directly and checks: reject before any inference, accept a
+  genuine post-wrap output, reject a tampered one — verified the naive gate
+  fails the post-wrap case.
+
+### Red-team pass (post-remediation)
+
+A four-lens adversarial review of the remediation diff surfaced four real defects
+in the changed code, all fixed with load-bearing regression tests:
+
+- **CNN1D `weight_scratch` overflow (memory corruption)** — the engine stages all
+  conv kernels (`F*K` bytes) into `weight_scratch`, which was sized `OUTPUT*FLAT`;
+  `OUTPUT*FLAT ≥ F*K` isn't guaranteed (e.g. a large kernel with few classes), so
+  a valid `.npz` could compile into an out-of-bounds write (UBSan-confirmed). Now
+  sized `max(F*K, FLAT)`. Regression config `cnn1d_bigkernel`.
+- **CNN1D kernel wipe truncation (Law II)** — the post-use scratch wipe cast the
+  length to `uint16`, leaving decrypted kernels resident for >64 KB blobs. Uses the
+  `uint32` length now.
+- **BNN neuron bit-offset wrap** — `bnn_dot_bits` used a `uint16` bit offset, so a
+  single layer with `in*out ≥ 65536` bits read the wrong weights. Widened to
+  `uint32`. Regression config `bnn_bigoffset`.
+- **Attestation lifetime asymmetry** — the input-validation and confidence-check
+  early returns didn't clear `has_output_mac`/`output_mac`, so a rejected inference
+  left the prior attestation live (not a false-accept, but inconsistent). Routed
+  through the fail path. Regression `reject_clears_mac`.
+
+**Known pre-existing issue (not from this work; needs AVR hardware to fix safely):**
+the engine reads model *layer descriptors* (`layers[i].input_size`, …) directly
+rather than via `pgm_read`, while the compiler emits `mnv_layers[] PROGMEM`. On a
+real AVR that reads flash as RAM → garbage layer sizes (the weight blob itself is
+read correctly via `pgm_read_byte`). This affects the whole engine on AVR, not just
+the new topology guard. Fixing it (e.g. emitting `mnv_layers` in RAM, ~30 B) should
+be validated on an actual AVR target.
+
+---
+
 ## Python Validation Note
 
 When simulating Q8 inference in Python, use `//128` for the accumulator
@@ -335,9 +457,18 @@ bash tests/host/run_engine_tests.sh
 |---|---|---|---|---|
 | ATtiny85 | 8 KB | 512 B | ~2K (BNN only) | ✓ |
 | ATmega328P | 32 KB | 2 KB | ~14K | ✓ |
-| ATmega2560 | 256 KB | 8 KB | ~200K | ✓ |
+| ATmega2560 | 256 KB | 8 KB | ~200K † | ✓ |
 | STM32F0 | 64 KB | 8 KB | ~40K | ✓ |
 | STM32F4 | 1 MB | 192 KB | ~800K | ✓ |
+
+**† AVR 64 KB blob limit.** AVR reads flash weights through 16-bit near
+pointers (`pgm_read_byte`), so a single encrypted weight blob must fit in the
+low 64 KB of flash. `mnv_init()` rejects a larger blob on AVR with
+`MNV_ERR_CONFIG` rather than wrapping the address. The flat-memory targets
+(STM32F0/F4, host) have no such limit — the blob length is a full 32-bit
+value throughout. Models above 64 KB on ATmega2560 (which spans multiple flash
+banks) need far-pointer access (`pgm_read_byte_far` + `RAMPZ`), which is not
+yet implemented; split such models or use an STM32 target.
 
 ---
 

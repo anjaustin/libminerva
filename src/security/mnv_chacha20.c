@@ -132,9 +132,9 @@ void mnv_chacha20_init(mnv_chacha20_ctx_t *ctx,
 void mnv_chacha20_decrypt(mnv_chacha20_ctx_t *ctx,
                           const uint8_t      *ciphertext,
                           uint8_t            *plaintext,
-                          uint16_t            len)
+                          uint32_t            len)
 {
-    for (uint16_t i = 0; i < len; i++) {
+    for (uint32_t i = 0; i < len; i++) {
         if (ctx->block_pos >= 64) {
             mnv_chacha20_block(ctx->key, ctx->nonce, ctx->counter, ctx->block);
             ctx->counter++;

@@ -179,6 +179,22 @@ void mnv_secure_zero(void *ptr, size_t len);
  */
 uint8_t mnv_ct_compare(const uint8_t *a, const uint8_t *b, size_t len);
 
+/**
+ * @brief Constant-time argmax over a Q8 output vector.
+ *
+ * Returns the index of the maximum element. Execution time and memory access
+ * pattern are independent of the values (no data-dependent branch), so using
+ * it to act on an inference result does not reintroduce a timing side channel
+ * (Law II). On ties, the LOWEST index wins.
+ *
+ * This is the intended way to turn an mnv_run() output vector into a class.
+ *
+ * @param vec  Output vector (length @p len).
+ * @param len  Number of elements (e.g. MNV_OUTPUT_SIZE).
+ * @return Index of the maximum element in [0, len).
+ */
+uint8_t mnv_ct_argmax(const mnv_act_t *vec, uint16_t len);
+
 
 /* =========================================================================
  * v1.1 — OUTPUT AUTHENTICATION

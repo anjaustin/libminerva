@@ -22,7 +22,16 @@
  * Uncomment exactly one target.
  * ========================================================================= */
 
+/* Uncomment exactly one target below, OR pass one as -DMNV_TARGET_xxx.
+ * An explicit command-line target now wins: previously the hard #define here
+ * was unconditional, so -DMNV_TARGET_HOST silently still built under ATmega
+ * constraints (14 KB budget, PROGMEM path). The guard keeps ATmega328P as the
+ * default when nothing is specified. */
+#if !defined(MNV_TARGET_ATMEGA328P) && !defined(MNV_TARGET_ATMEGA2560) && \
+    !defined(MNV_TARGET_ATTINY85)   && !defined(MNV_TARGET_STM32F0)   && \
+    !defined(MNV_TARGET_STM32F4)    && !defined(MNV_TARGET_HOST)
 #define MNV_TARGET_ATMEGA328P
+#endif
 /* #define MNV_TARGET_ATMEGA2560   */
 /* #define MNV_TARGET_ATTINY85     */
 /* #define MNV_TARGET_STM32F0      */
@@ -135,6 +144,22 @@
  * Define your model dimensions here.
  * The Python compiler (minerva_compile.py) auto-generates these.
  * ========================================================================= */
+
+/* Auto-adopt a compiler-generated model-dimensions header when one is on the
+ * include path. This is what keeps the ENGINE translation units (which include
+ * only this file) and the APPLICATION translation unit (which includes the
+ * generated weights.h) sized identically. Without it, the engine would fall
+ * back to the defaults below while the application used the model's real
+ * topology, giving mismatched mnv_ctx_t layouts and out-of-bounds buffer
+ * access. Command-line -D definitions still override (the header self-guards
+ * every macro with #ifndef). To use it, put the generated header's directory
+ * on the include path for EVERY translation unit (e.g. add `-I.` — see the
+ * example Makefile). Editing the defaults below by hand remains supported. */
+#if defined(__has_include)
+#  if __has_include("mnv_model_dims.h")
+#    include "mnv_model_dims.h"
+#  endif
+#endif
 
 #ifndef MNV_INPUT_SIZE
 #define MNV_INPUT_SIZE          16U

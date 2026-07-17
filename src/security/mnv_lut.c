@@ -114,14 +114,24 @@ int8_t mnv_lut_tanh_blinded(int8_t x, uint32_t *prng_state)
                             prng_state);
 }
 
-int8_t mnv_lut_relu_blinded(int8_t x, uint32_t *prng_state)
+/* Power-/timing-equalizing dummy scan: a full 256-entry masked read that
+ * produces the same trace shape as a real blinded LUT lookup but discards the
+ * result. Used by activations that don't need a table (ReLU, and the linear
+ * output layer) so EVERY activation — including the output layer — looks the
+ * same on a side channel (Law II). Also advances the PRNG by one mask draw,
+ * matching the real lookups. */
+static void lut_dummy_scan(uint32_t *prng_state)
 {
-    /* Power-equalizing dummy scan */
     uint8_t mask = mnv_prng_mask8(prng_state);
     volatile int8_t dummy = 0;
     for (uint16_t i = 0; i < 256U; i++)
         dummy = (int8_t)(dummy ^ LUT_READ(MNV_SIGMOID_LUT_B, (uint8_t)((uint8_t)i + mask)));
     (void)dummy;
+}
+
+int8_t mnv_lut_relu_blinded(int8_t x, uint32_t *prng_state)
+{
+    lut_dummy_scan(prng_state);          /* power-equalizing dummy scan */
     /* Branchless ReLU */
     int8_t m = (int8_t)((int8_t)x >> 7);
     return (int8_t)(x & ~m);
@@ -134,7 +144,10 @@ int8_t mnv_lut_apply_blinded(mnv_act_fn_t fn, int8_t x, uint32_t *prng_state)
         case MNV_ACT_RELU:    return mnv_lut_relu_blinded(x, prng_state);
         case MNV_ACT_SIGMOID: return mnv_lut_sigmoid_blinded(x, prng_state);
         case MNV_ACT_TANH:    return mnv_lut_tanh_blinded(x, prng_state);
-        default:              (void)prng_state; return x;
+        /* Linear (output layer) and any other case still run the equalizing
+         * dummy scan so the output layer is not distinguishable from the hidden
+         * layers on a power/timing trace (Law II). */
+        default:              lut_dummy_scan(prng_state); return x;
     }
 #else
     (void)prng_state;

@@ -21,7 +21,7 @@ void mnv_chacha20_block(const uint8_t *key, const uint8_t *nonce,
 void mnv_chacha20_init(mnv_chacha20_ctx_t *ctx, const uint8_t *key,
                        const uint8_t *nonce, uint32_t initial_counter);
 void mnv_chacha20_decrypt(mnv_chacha20_ctx_t *ctx, const uint8_t *ciphertext,
-                          uint8_t *plaintext, uint16_t len);
+                          uint8_t *plaintext, uint32_t len);
 void mnv_chacha20_wipe(mnv_chacha20_ctx_t *ctx);
 
 #endif /* MNV_CHACHA20_H */

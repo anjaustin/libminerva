@@ -57,10 +57,40 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
     if (!ctx || !model) return MNV_ERR_NULL;
     mnv_secure_zero(ctx, sizeof(mnv_ctx_t));
     if (model->version != MNV_ABI_VERSION)   return MNV_ERR_CONFIG;
-    /* Layer count check only for MLP (CNN1D uses num_layers=0) */
-#if defined(MNV_ARCH_MLP)
+#if defined(MNV_PROGMEM_WEIGHTS)
+    /* AVR reads flash weights through 16-bit near pointers (pgm_read_byte), so
+     * the encrypted blob must live in the low 64 KB of flash. Larger models on
+     * AVR need far-pointer access (pgm_read_byte_far + RAMPZ), which is not
+     * implemented. Reject rather than silently wrap the address and compute the
+     * MAC over the wrong bytes. (On flat-memory targets — STM32, host — there
+     * is no such cap and encrypted_len may use the full uint32 range.) */
+    if (model->encrypted_len > 0xFFFFUL)     return MNV_ERR_CONFIG;
+#endif
+    /* Layer count check for the descriptor-driven architectures (MLP, BNN).
+     * CNN1D uses num_layers=0 and derives its shape from the MNV_CNN_* macros. */
+#if defined(MNV_ARCH_MLP) || defined(MNV_ARCH_BNN)
     if (model->num_layers == 0 ||
         model->num_layers > MNV_NUM_LAYERS)  return MNV_ERR_CONFIG;
+
+    /* Topology-consistency guard (defense-in-depth for compile-time buffer
+     * sizing). The ctx buffers in THIS translation unit are sized from the
+     * MNV_* macros. If the model's real layer widths disagree — e.g. because
+     * the engine was built without the generated mnv_model_dims.h on its
+     * include path — proceeding would read/write past buf_a/buf_b/
+     * weight_scratch. Reject with MNV_ERR_CONFIG instead of corrupting SRAM.
+     * (Layer widths are public topology, not a protected asset, so checking
+     * them before the MAC verification below leaks nothing.) */
+    if (model->layers[0].input_size != MNV_INPUT_SIZE)   return MNV_ERR_CONFIG;
+    if (model->layers[model->num_layers - 1U].output_size != MNV_OUTPUT_SIZE)
+                                                         return MNV_ERR_CONFIG;
+    for (uint8_t li = 0; li < model->num_layers; li++) {
+        uint16_t isz = model->layers[li].input_size;
+        uint16_t osz = model->layers[li].output_size;
+        if (isz > MNV_MAX_ACT_WIDTH || osz > MNV_MAX_ACT_WIDTH)
+                                                         return MNV_ERR_CONFIG;
+        if ((uint32_t)isz * (uint32_t)osz > (uint32_t)MNV_MAX_LAYER_WEIGHTS)
+                                                         return MNV_ERR_CONFIG;
+    }
 #endif
 
     mnv_canary_plant(ctx);
@@ -77,10 +107,10 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
 #if defined(MNV_PROGMEM_WEIGHTS)
         {
             uint8_t chunk[64];
-            uint16_t remaining = model->encrypted_len;
-            uint16_t offset    = 0;
+            uint32_t remaining = model->encrypted_len;   /* <= 0xFFFF on AVR */
+            uint32_t offset    = 0;
             while (remaining > 0) {
-                uint16_t n = (remaining > 64U) ? 64U : remaining;
+                uint16_t n = (remaining > 64U) ? 64U : (uint16_t)remaining;
                 for (uint16_t i = 0; i < n; i++)
                     chunk[i] = pgm_read_byte(model->encrypted_weights + offset + i);
                 mnv_blake2s_update(&bctx, chunk, n);
@@ -148,7 +178,11 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     /* Input validation */
 #if defined(MNV_ENABLE_INPUT_VALIDATION)
     status = mnv_ct_validate_input(input, MNV_INPUT_SIZE);
-    if (status != MNV_OK) { mnv_secure_zero(output, MNV_OUTPUT_SIZE); return MNV_ERR_INPUT; }
+    /* Route through fail so a rejected inference uniformly invalidates the
+     * output MAC (has_output_mac=false) and wipes buffers — same as the
+     * glitch/mismatch paths. Otherwise a prior success's attestation would
+     * survive a later rejection (inconsistent per-failure-type behavior). */
+    if (status != MNV_OK) { status = MNV_ERR_INPUT; goto fail; }
 #endif
 
     /* Run 1 */
@@ -170,8 +204,8 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
         if (status != MNV_OK) goto fail;
         uint8_t diff = mnv_ct_compare((const uint8_t *)output,
                                        (const uint8_t *)ctx->run2_buf,
-                                       MNV_OUTPUT_SIZE);
-        mnv_secure_zero(ctx->run2_buf, MNV_OUTPUT_SIZE);
+                                       MNV_ACT_BYTES(MNV_OUTPUT_SIZE));
+        mnv_secure_zero(ctx->run2_buf, MNV_ACT_BYTES(MNV_OUTPUT_SIZE));
         if (diff != 0U) { status = MNV_ERR_MISMATCH; goto fail; }
     }
 #endif
@@ -183,7 +217,7 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
     /* Confidence check */
 #if defined(MNV_ENABLE_CONFIDENCE_CHECK)
     status = mnv_ct_confidence_check(output, MNV_OUTPUT_SIZE);
-    if (status != MNV_OK) { mnv_secure_zero(output, MNV_OUTPUT_SIZE); return MNV_ERR_CONFIDENCE; }
+    if (status != MNV_OK) { status = MNV_ERR_CONFIDENCE; goto fail; }  /* uniform invalidation (see input path) */
 #endif
 
     /* v1.1: Output MAC */
@@ -196,11 +230,12 @@ mnv_status_t mnv_run_with_model(mnv_ctx_t         *ctx,
 fail_glitch:
     status = MNV_ERR_GLITCH;
 fail:
-    mnv_secure_zero(output,              MNV_OUTPUT_SIZE);
+    mnv_secure_zero(output,              MNV_ACT_BYTES(MNV_OUTPUT_SIZE));
     mnv_secure_zero(ctx->weight_scratch, sizeof(ctx->weight_scratch));
     mnv_secure_zero(ctx->buf_a,          sizeof(ctx->buf_a));
     mnv_secure_zero(ctx->buf_b,          sizeof(ctx->buf_b));
     mnv_secure_zero(ctx->output_mac,     MNV_OUTPUT_MAC_SIZE);
+    ctx->has_output_mac = false;   /* the MAC we just wiped is not verifiable */
     return status;
 }
 

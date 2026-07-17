@@ -103,6 +103,12 @@ MNV_STATIC_ASSERT(
     #define MNV_Q_MAX       1
 #endif
 
+/* Byte length of a vector of N activation elements. mnv_act_t is 1 byte for
+ * Q8/Q4/binary but 2 bytes for Q15, so ANY byte-oriented operation over an
+ * activation vector — memcpy, mnv_secure_zero, mnv_ct_compare — must use this,
+ * NOT the raw element count (which would cover only half a Q15 vector). */
+#define MNV_ACT_BYTES(n)  ((size_t)(n) * sizeof(mnv_act_t))
+
 /* =========================================================================
  * STATUS CODES
  * Every public function returns mnv_status_t.
@@ -181,8 +187,8 @@ typedef struct {
     uint8_t  iv[MNV_CHACHA20_IV_SIZE];      /* ChaCha20 nonce             */
     uint8_t  mac[MNV_BLAKE2S_DIGEST_SIZE];  /* BLAKE2s over ciphertext    */
                                             /* (encrypt-then-MAC)         */
-    uint16_t weight_count;                  /* number of weights         */
-    uint16_t bias_count;                    /* number of biases          */
+    uint32_t weight_count;                  /* number of weights         */
+    uint32_t bias_count;                    /* number of biases          */
 } mnv_crypto_header_t;
 
 /* =========================================================================
@@ -198,7 +204,9 @@ typedef struct {
     const mnv_crypto_header_t *crypto;      /* crypto header for weight blob     */
     const uint8_t       *key;               /* 256-bit ChaCha20 key (from fuse/KDF)*/
     const uint8_t       *encrypted_weights; /* entire encrypted weight blob      */
-    uint16_t             encrypted_len;
+    uint32_t             encrypted_len;     /* blob length in bytes (up to 4 GB; */
+                                            /* AVR near-PROGMEM caps this at 64 KB,*/
+                                            /* enforced at mnv_init())            */
 } mnv_model_t;
 
 #define MNV_ABI_VERSION  0x01U
@@ -234,7 +242,14 @@ typedef struct {
  * FLAT_SIZE = CNN_NUM_FILTERS * POOL_LEN = CNN_NUM_FILTERS * ((INPUT_SIZE-KERNEL_SIZE+1)/POOL_SIZE) */
 #if defined(MNV_ARCH_CNN1D)
 #  define MNV_CNN_FLAT_SZ (MNV_CNN_NUM_FILTERS * ((MNV_INPUT_SIZE - MNV_CNN_KERNEL_SIZE + 1U) / MNV_CNN_POOL_SIZE))
-    mnv_weight_t weight_scratch[MNV_OUTPUT_SIZE * MNV_CNN_FLAT_SZ];
+#  define MNV_CNN_KERN_SZ (MNV_CNN_NUM_FILTERS * MNV_CNN_KERNEL_SIZE)
+    /* weight_scratch must hold the WIDER of the two things the CNN forward pass
+     * stages into it: ALL conv kernels at once (F*K bytes, decrypted together
+     * in mnv_cnn1d.c) or one dense weight row (FLAT bytes). Sizing it to
+     * OUTPUT*FLAT (old) silently overflowed whenever F*K > OUTPUT*FLAT — e.g. a
+     * large kernel with few output classes (in=6,K=5,F=2,pool=2 → F*K=10 vs
+     * OUTPUT*FLAT=2). Use the true maximum. */
+    mnv_weight_t weight_scratch[MNV_MAX2_(MNV_CNN_KERN_SZ, MNV_CNN_FLAT_SZ)];
 #else
     /* one layer's weights at a time — sized to the widest layer, not layer 0 */
     mnv_weight_t weight_scratch[MNV_MAX_LAYER_WEIGHTS];
@@ -267,8 +282,11 @@ typedef struct {
     const mnv_model_t *model;
 
     /* State flags */
-    bool        verified;     /* integrity check passed this session */
+    bool        verified;      /* integrity check passed this session */
     bool        initialized;
+    bool        has_output_mac; /* an inference has produced output_mac; lets
+                                 * mnv_outauth_verify tell "never ran" from
+                                 * "ran, counter wrapped" (see mnv_outauth.c) */
 } mnv_ctx_t;
 
 #endif /* MNV_TYPES_H */

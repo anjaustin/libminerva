@@ -32,12 +32,20 @@
 
 mnv_act_t mnv_q8_clamp(mnv_acc_t x)
 {
-    if (x >  127) return  127;
-    if (x < -128) return -128;
-    return (mnv_act_t)x;
-    /* Note: for pure constant-time, use the bitwise version below.
-     * The compiler generates branchless cmov on most targets including AVR -Os.
-     * Kept as conditional for readability; AVR -Os produces equivalent code. */
+    /* Branchless clamp to [-128, 127]. No data-dependent branch, so timing and
+     * power are independent of x (Law II). This matters most on AVR, which has
+     * NO conditional-move instruction — the previous `if` form compiled to real
+     * branches there, contradicting the constant-time claim.
+     *
+     * Precondition: x is a bounded inference accumulator. The widest supported
+     * layer keeps |acc >> 7| well under ~2e5, far inside int32, so the
+     * compare-by-subtraction below cannot overflow. */
+    int32_t v  = (int32_t)x;
+    int32_t hi = (127 - v) >> 31;              /* all-ones iff v > 127   */
+    v = (v & ~hi) | (127 & hi);                /* v = min(v, 127)        */
+    int32_t lo = (v + 128) >> 31;              /* all-ones iff v < -128  */
+    v = (v & ~lo) | ((int32_t)(-128) & lo);    /* v = max(v, -128)       */
+    return (mnv_act_t)v;
 }
 
 mnv_act_t mnv_q8_mul(mnv_act_t a, mnv_act_t b)

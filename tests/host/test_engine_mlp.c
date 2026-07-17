@@ -116,6 +116,14 @@ int main(void) {
     static mnv_ctx_t ctx;
     CHECK(mnv_init(&ctx, &M) == MNV_OK, "init valid model -> OK");
 
+    /* Item 9: verifying an output before any inference (counter == 0) must be
+     * rejected cleanly, not underflow the counter. */
+    {
+        int8_t din[IN] = {0}, dout[OUT] = {0};
+        CHECK(mnv_verify_output(&ctx, din, dout) == MNV_ERR_TAMPER,
+              "verify_output before any run -> TAMPER");
+    }
+
     /* correctness across several inputs */
     int correctness_ok = 1;
     for (int t = 0; t < 8; t++) {
@@ -162,7 +170,37 @@ int main(void) {
         mnv_model_t Mv = M; Mv.version = 0xFF;
         static mnv_ctx_t ctx_v;
         CHECK(mnv_init(&ctx_v, &Mv) == MNV_ERR_CONFIG, "init bad ABI -> CONFIG");
+
+        /* topology guard: a model whose declared input width disagrees with the
+         * compiled-in MNV_INPUT_SIZE must be rejected (would otherwise mis-size
+         * ctx buffers). This is the runtime backstop for the mnv_model_dims.h /
+         * __has_include propagation. */
+        mnv_layer_desc_t Lbad[3] = {
+            { IN + 1, H0,  MNV_ACT_RELU,   NULL, NULL },  /* wrong input_size */
+            { H0,     H1,  MNV_ACT_RELU,   NULL, NULL },
+            { H1,     OUT, MNV_ACT_LINEAR, NULL, NULL },
+        };
+        mnv_model_t Mbad = M; Mbad.layers = Lbad;
+        static mnv_ctx_t ctx_b;
+        CHECK(mnv_init(&ctx_b, &Mbad) == MNV_ERR_CONFIG,
+              "init topology mismatch -> CONFIG");
+
+        /* and a last-layer output-width mismatch */
+        mnv_layer_desc_t Lbad2[3] = {
+            { IN, H0,      MNV_ACT_RELU,   NULL, NULL },
+            { H0, H1,      MNV_ACT_RELU,   NULL, NULL },
+            { H1, OUT + 1, MNV_ACT_LINEAR, NULL, NULL },  /* wrong output_size */
+        };
+        mnv_model_t Mbad2 = M; Mbad2.layers = Lbad2;
+        static mnv_ctx_t ctx_b2;
+        CHECK(mnv_init(&ctx_b2, &Mbad2) == MNV_ERR_CONFIG,
+              "init output-width mismatch -> CONFIG");
     }
+
+    /* (The counter-wraparound behavior of the output MAC is covered directly
+     * and reliably in tests/host/test_outauth_counter.c — driving it through
+     * mnv_run here made the assertion hostage to the double-run path and to
+     * compilers caching the white-box ctx read.) */
 
     printf("%s (%d failure[s])\n", fails ? "FAILED" : "ALL PASS", fails);
     return fails;

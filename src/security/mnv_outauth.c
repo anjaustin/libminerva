@@ -46,22 +46,29 @@
  * Total:  OUTPUT_SIZE + INPUT_SIZE + 4 bytes
  * ========================================================================= */
 
-#define MNV_AUTH_BUF_SIZE  (MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 4U)
+/* Byte lengths — mnv_act_t is 2 bytes under Q15, so the MAC input must be
+ * sized and laid out in BYTES, not element counts. Using element counts left
+ * the upper half of every Q15 output/input element outside the MAC, so those
+ * bytes could be tampered undetected. */
+#define MNV_AUTH_OUT_BYTES (MNV_OUTPUT_SIZE * sizeof(mnv_act_t))
+#define MNV_AUTH_IN_BYTES  (MNV_INPUT_SIZE  * sizeof(mnv_act_t))
+#define MNV_AUTH_BUF_SIZE  (MNV_AUTH_OUT_BYTES + MNV_AUTH_IN_BYTES + 4U)
 
 static void build_auth_buffer(const mnv_act_t *output,
                                const mnv_act_t *input,
                                uint32_t         counter,
                                uint8_t         *buf)
 {
-    /* Output vector */
-    memcpy(buf, output, MNV_OUTPUT_SIZE);
-    /* Input vector */
-    memcpy(buf + MNV_OUTPUT_SIZE, input, MNV_INPUT_SIZE);
+    /* Output vector (full byte width) */
+    memcpy(buf, output, MNV_AUTH_OUT_BYTES);
+    /* Input vector (full byte width) */
+    memcpy(buf + MNV_AUTH_OUT_BYTES, input, MNV_AUTH_IN_BYTES);
     /* Counter — little-endian */
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 0] = (uint8_t)(counter);
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 1] = (uint8_t)(counter >> 8);
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 2] = (uint8_t)(counter >> 16);
-    buf[MNV_OUTPUT_SIZE + MNV_INPUT_SIZE + 3] = (uint8_t)(counter >> 24);
+    uint8_t *c = buf + MNV_AUTH_OUT_BYTES + MNV_AUTH_IN_BYTES;
+    c[0] = (uint8_t)(counter);
+    c[1] = (uint8_t)(counter >> 8);
+    c[2] = (uint8_t)(counter >> 16);
+    c[3] = (uint8_t)(counter >> 24);
 }
 
 /* =========================================================================
@@ -89,6 +96,7 @@ void mnv_outauth_compute(mnv_ctx_t       *ctx,
 
     /* Truncate to MNV_OUTPUT_MAC_SIZE bytes */
     memcpy(ctx->output_mac, full_mac, MNV_OUTPUT_MAC_SIZE);
+    ctx->has_output_mac = true;
 
     /* Increment counter — monotonic, wraps at 2^32 */
     ctx->inference_counter++;
@@ -114,7 +122,16 @@ mnv_status_t mnv_outauth_verify(const mnv_ctx_t *ctx,
     uint8_t auth_buf[MNV_AUTH_BUF_SIZE];
     uint8_t full_mac[MNV_BLAKE2S_DIGEST_SIZE];
 
-    /* Use the counter value at the time of the last inference */
+    /* Reject if no inference has ever produced an output MAC. This is the clean
+     * guard for the counter-1 "underflow": we do NOT gate on counter == 0,
+     * because after 2^32 inferences the counter legitimately wraps to 0 and
+     * (counter - 1) == 0xFFFFFFFF is then the CORRECT modular value matching the
+     * compute side — gating on counter would falsely reject that genuine
+     * output. The has_output_mac flag distinguishes "never produced" from
+     * "produced, counter wrapped". */
+    if (!ctx->has_output_mac) return MNV_ERR_TAMPER;
+
+    /* Counter at the time of the last inference (modular; wraps with compute). */
     uint32_t last_counter = ctx->inference_counter - 1U;
 
     build_auth_buffer(output, input, last_counter, auth_buf);
