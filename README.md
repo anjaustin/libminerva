@@ -323,13 +323,29 @@ in the changed code, all fixed with load-bearing regression tests:
   left the prior attestation live (not a false-accept, but inconsistent). Routed
   through the fail path. Regression `reject_clears_mac`.
 
-**Known pre-existing issue (not from this work; needs AVR hardware to fix safely):**
-the engine reads model *layer descriptors* (`layers[i].input_size`, …) directly
-rather than via `pgm_read`, while the compiler emits `mnv_layers[] PROGMEM`. On a
-real AVR that reads flash as RAM → garbage layer sizes (the weight blob itself is
-read correctly via `pgm_read_byte`). This affects the whole engine on AVR, not just
-the new topology guard. Fixing it (e.g. emitting `mnv_layers` in RAM, ~30 B) should
-be validated on an actual AVR target.
+### AVR PROGMEM metadata fix
+
+A pre-existing correctness bug on AVR, surfaced by the red-team and fixed
+separately: the engine reads the **crypto header** (`crypto->iv`, `crypto->mac`)
+and **layer descriptors** (`layers[i].input_size`, …) with a plain dereference,
+but the compiler emitted them `PROGMEM`. On a Harvard-architecture AVR a direct
+read of a flash address returns garbage — so on real hardware the MAC comparison
+would read a garbage expected-MAC and reject **every** model at init, and layer
+sizes would be wrong. (Invisible on the host tests because a von-Neumann host has
+one address space.)
+
+Fix: emit the small metadata (crypto header ~52 B, layer descriptors ~30 B) in
+**RAM** and keep only the large encrypted-weights blob in flash (`PROGMEM`, read
+via `pgm_read_byte`). This aligns the emitted *placement* with the engine's
+*access pattern* on every target. A related instance was also fixed:
+`mnv_verify()` (re-verification) computed the weight MAC via `mnv_blake2s_verify`,
+whose plain `memcpy` of the PROGMEM blob reads garbage on AVR — it now shares the
+same chunked `pgm_read` helper as `mnv_init()`. SRAM cost on ATmega328P: ~82 B
+(budget 960 B).
+Verified on host (behavior-preserving) and by codegen inspection; **final
+sign-off still wants a run on real AVR** (no AVR toolchain in the fix
+environment). The device **key** placement remains the user's responsibility via
+`secrets.h` (per the threat model, provisioned from EEPROM/fuse).
 
 ---
 

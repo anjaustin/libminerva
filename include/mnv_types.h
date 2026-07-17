@@ -149,14 +149,13 @@ typedef struct {
     uint16_t      input_size;
     uint16_t      output_size;
     mnv_act_fn_t  activation;
-    /* Pointers into the weight/bias arrays in flash (PROGMEM on AVR) */
-#if defined(MNV_PROGMEM_WEIGHTS)
-    const mnv_weight_t * PROGMEM weights;
-    const mnv_bias_t   * PROGMEM biases;
-#else
+    /* Vestigial (emitted NULL): the engine reads weights from the decrypted
+     * blob, not through these. The layer descriptor array lives in RAM (NOT
+     * PROGMEM) on every target so the engine can read the sizes above with a
+     * plain dereference — on AVR a PROGMEM descriptor would need pgm_read and
+     * a direct read returns garbage. Keep these plain pointers accordingly. */
     const mnv_weight_t *weights;
     const mnv_bias_t   *biases;
-#endif
 } mnv_layer_desc_t;
 
 /* =========================================================================
@@ -169,13 +168,9 @@ typedef struct {
     uint16_t      kernel_size;
     uint16_t      pool_size;
     mnv_act_fn_t  activation;
-#if defined(MNV_PROGMEM_WEIGHTS)
-    const mnv_weight_t * PROGMEM kernels;
-    const mnv_bias_t   * PROGMEM biases;
-#else
+    /* Vestigial; descriptor lives in RAM (see mnv_layer_desc_t). Plain ptrs. */
     const mnv_weight_t *kernels;
     const mnv_bias_t   *biases;
-#endif
 } mnv_conv1d_desc_t;
 
 /* =========================================================================

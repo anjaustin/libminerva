@@ -214,13 +214,18 @@ class Compiler:
            '','#include "weights.h"','#include "minerva.h"','#include "secrets.h"']
         if self.progmem: L.append('#include <avr/pgmspace.h>')
         L+=['',self._ca('mnv_encrypted_weights',ct),'']
-        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr {pm} = {{',
+        # Crypto header stays in RAM (no PROGMEM): the engine reads
+        # mnv_crypto_hdr.iv/.mac with a plain dereference, which returns garbage
+        # from a PROGMEM address on AVR. Only the large weight blob is PROGMEM.
+        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr = {{',
             '    .iv  = {'+', '.join(f'0x{b:02X}' for b in nonce)+'},',
             '    .mac = {'+', '.join(f'0x{b:02X}' for b in mac)+'},',
             f'    .weight_count = {sum(o[1] for o in offsets)}U,',
             f'    .bias_count   = {sum(o[2] for o in offsets)}U,',
             '};','']
-        L.append(f'const mnv_layer_desc_t mnv_layers[{len(m.layers)}] {pm} = {{')
+        # Layer descriptors stay in RAM (no PROGMEM) so the engine can read
+        # input_size/output_size/activation with a plain dereference on AVR.
+        L.append(f'const mnv_layer_desc_t mnv_layers[{len(m.layers)}] = {{')
         for i,layer in enumerate(m.layers):
             act=ACT_MAP.get(layer.activation.lower(),'MNV_ACT_RELU')
             L+=[f'    [{i}] = {{',f'        .input_size  = {layer.in_size}U,',
@@ -371,7 +376,10 @@ class CnnCompiler:
            '#include "weights.h"','#include "minerva.h"','#include "secrets.h"']
         if self.progmem: L.append('#include <avr/pgmspace.h>')
         L+=['',self._ca('mnv_encrypted_weights',ct),'']
-        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr {pm} = {{',
+        # Crypto header stays in RAM (no PROGMEM): the engine reads
+        # mnv_crypto_hdr.iv/.mac with a plain dereference, which returns garbage
+        # from a PROGMEM address on AVR. Only the large weight blob is PROGMEM.
+        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr = {{',
             '    .iv  = {'+', '.join(f'0x{b:02X}' for b in nonce)+'},',
             '    .mac = {'+', '.join(f'0x{b:02X}' for b in mac)+'},',
             f'    .weight_count = {wcount}U,',
