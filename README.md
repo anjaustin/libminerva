@@ -202,8 +202,8 @@ A full audit and remediation pass. Highlights:
 - **BNN** — fixed multi-layer ciphertext offset tracking, added per-layer
   bias handling, and replaced the byte-popcount dot product with a
   bit-addressed one that is correct for non-multiple-of-8 layer widths.
-  `MNV_QUANT_BINARY`/`Q4`/`Q15` are now actually selectable (Q8 no longer
-  forced on).
+  `MNV_QUANT_BINARY`/`Q4` are now actually selectable (Q8 no longer forced on).
+  (Q15 was later removed as non-functional — see the hardening pass, H5.)
 - **Buffer sizing** — activation, weight-scratch, and bias buffers are sized
   to the widest layer, not layer 0 (previously overflowed when a hidden layer
   was wider than the input).
@@ -255,16 +255,14 @@ a regression test for each fix.
   host builds ran under ATmega constraints. The default is now guarded so an
   explicit command-line target wins; ATmega328P remains the default when none
   is given.
-- **Q15 byte-length confusion (medium)** — under Q15 `mnv_act_t` is 2 bytes, but
-  the double-run compare, the output/scratch zeroing, and (security-relevant)
-  the output-MAC buffer treated `MNV_*_SIZE` element counts as byte counts, so
-  the upper byte of every Q15 element sat outside the MAC and could be tampered
-  undetected. Added an `MNV_ACT_BYTES(n)` helper and switched all byte-oriented
-  vector operations to it. Regression test flips the high byte of a Q15
-  output/input element and confirms the MAC now catches it (verified it is
-  missed pre-fix). Note: full Q15 *forward-pass arithmetic* (the dot product
-  still narrows to int8 internally) remains future work — this fix is the
-  byte-length/authentication correctness, which applies whenever Q15 is used.
+- **Byte-length vs element-count (medium)** — the double-run compare, the
+  output/scratch zeroing, and (security-relevant) the output-MAC buffer treated
+  `MNV_*_SIZE` element counts as byte counts. For 1-byte activations this is a
+  no-op, but for a multi-byte activation type the upper bytes would fall outside
+  the MAC. Added an `MNV_ACT_BYTES(n)` helper and switched all byte-oriented
+  vector operations to it. (This originally mattered for Q15, whose 2-byte
+  activations it protected; Q15 was later removed — H5 — but the helper is kept,
+  correct and forward-compatible for any future multi-byte type.)
 - **CNN1D compiler path (low)** — the 1D-CNN architecture shipped in the engine
   but had no compiler, and `mnv_cnn1d.c` referenced a non-existent
   `compile_cnn1d.py`, so CNN1D models could only be hand-authored in C.
@@ -408,6 +406,17 @@ A follow-on pass tightening test quality and verifiability.
   the calibrated shift ~59.5%; a trained model scores higher (this measures
   quantization fidelity, and the point is calibration ≫ heuristic). Bias PTQ for
   the conv/dense layers remains future work.
+- **Q15 removed (H5).** Q15 (16-bit) was advertised but never functional: the
+  fixed-point core narrows to int8 (`(int8_t)weights[i]`, `>>7`, clamp to
+  `[-128,127]`), the int32 accumulator overflows for N≥3 sixteen-bit terms, and
+  sigmoid/tanh would need a 65536-entry int16 LUT (infeasible on an MCU). A
+  correct Q15 path is a second precision engine that cannot support the LUT
+  activations, and generalizing the core would risk the tested Q8 path. So Q15
+  was **removed** rather than shipped broken or half-finished: the type block and
+  config option are gone, and selecting `MNV_QUANT_Q15` now fails with a clear
+  `#error`. Supported quantizations are **Q8, Q4, and binary**. (The
+  `MNV_ACT_BYTES` byte-length machinery it motivated is retained — correct and
+  forward-compatible.)
 
 ---
 

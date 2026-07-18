@@ -166,21 +166,6 @@ if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_ENABLE_BLINDED_LUT $INC \
 elif ! "$TMP/lut_uniform"; then rc=1; fi
 echo
 
-# Q15 output-MAC byte coverage (Item 5). Q15 makes mnv_act_t 2 bytes; the MAC
-# must cover the full vector, not just the low half. Built against outauth +
-# crypto only (not the full Q15 forward path).
-echo "=== q15_outauth ==="
-if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_QUANT_Q15 \
-        -DMNV_INPUT_SIZE=4 -DMNV_OUTPUT_SIZE=4 -DMNV_LAYER_0_SIZE=4 \
-        -DMNV_LAYER_1_SIZE=4 -DMNV_NUM_LAYERS=3 $INC \
-        "$ROOT/tests/host/test_q15_outauth.c" \
-        "$ROOT/src/security/mnv_outauth.c" "$ROOT/src/security/mnv_blake2s.c" \
-        "$ROOT/src/security/mnv_ct.c" \
-        -o "$TMP/q15_outauth" 2>"$TMP/q15.berr"; then
-    echo "  BUILD FAILED"; cat "$TMP/q15.berr"; rc=1
-elif ! "$TMP/q15_outauth"; then rc=1; fi
-echo
-
 # A rejected inference must invalidate the output attestation (red-team Fix 4).
 run_cfg reject_clears_mac test_reject_clears_mac.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_MIN_CONFIDENCE=100 \
