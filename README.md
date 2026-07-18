@@ -22,14 +22,20 @@ Small. Secure. Certain.
 ```
 
 Minerva is a pure C ML inference library for microcontrollers, from ATtiny85 to
-STM32, with military-grade security properties. It runs encrypted,
-integrity-verified neural networks with constant-time execution, anti-glitch
+STM32, *designed for* defense-in-depth security. It runs encrypted,
+integrity-verified neural networks with constant-time arithmetic, anti-glitch
 canaries, blinded LUT activations, output authentication, and zero dynamic
 allocation.
 
+**Read [Verification Status](#verification-status) first.** Some of those
+properties are verified by the test suite, some are correct by construction but
+unmeasured, and some (power/EM and fault-injection resistance) are design goals
+that require hardware this project has not run. The security posture is real,
+but treat each claim at the assurance level stated there — not as a guarantee.
+
 The smallest supported target is an **ATmega328P** (32 KB flash, 2 KB RAM).
-A 3-layer MLP runs in ~14.5 KB flash at ~28 ms/inference including all
-security overhead.
+The ATmega footprint/timing figures quoted below predate the AVR PROGMEM fix
+(H-series) and must be re-measured on hardware — see Verification Status.
 
 ---
 
@@ -43,6 +49,11 @@ security overhead.
 
 > **III. Stillness** - Minerva never allocates dynamically. Every byte it will
 > ever use is known at compile time.
+
+*These are design principles. Law III (no allocation) is enforced and checkable;
+Law I (integrity-before-output) is tested on host; Law II (no timing/power/output
+leakage) is only partially verifiable without a lab — see
+[Verification Status](#verification-status).*
 
 ---
 
@@ -141,6 +152,58 @@ void loop(void) {
 
 The +56 B flash and +2 ms for int32 accumulator is the correct engineering
 tradeoff: int16 overflows for any layer with more than 2 inputs.
+
+*These ATmega numbers are historical and predate the AVR PROGMEM fix — see
+[Verification Status](#verification-status). Re-measure on hardware.*
+
+---
+
+## Verification Status
+
+Minerva is a security-*oriented* library. This section states plainly what is
+actually verified, what is correct by construction but unmeasured, and what
+needs hardware or a lab this project has not run. Trust each property only at
+the level stated here.
+
+**Verified on host** (automated suite, ASan + UBSan; `run_engine_tests.sh`):
+- Engine arithmetic (MLP / CNN1D / BNN) matches an independent integer reference.
+- The compiler's emitted C compiles and its output matches a Python reference
+  (MLP + CNN1D) — including weight transpose, blob section order, and dense shift.
+- Integrity/authentication: tampered ciphertext → `MNV_ERR_TAMPER`; model binding
+  at `mnv_init`; output-MAC verification, replay counter, and the 2³² wraparound.
+- Topology-mismatch rejection; the >64 KB length path; per-layer buffer sizing.
+- **Constant-time *timing*** of `mnv_ct_compare` (dudect-style Welch t-test vs a
+  leaky control that must itself show the leak).
+- The AVR flash/RAM access pattern, *simulated* on host (a poisoned-blob lock
+  proves the weight blob is read only via `pgm_read`) plus a codegen placement
+  check (metadata in RAM, blob in flash).
+
+**Correct by construction / inspection — NOT measured on the target:**
+- Constant-time execution on **AVR** (which has no conditional-move): checkable
+  by an `avr-gcc` branch audit *when that toolchain is present*; a host audit is
+  vacuous (clang emits `csel` for both branchless and branchy source), so it was
+  not verified in this environment.
+- The AVR **PROGMEM metadata fix**: correct by codegen inspection + host
+  simulation, but **not run on real AVR** (no toolchain here). An untested
+  on-target self-test (`examples/atmega328p_selftest/`) is provided for sign-off.
+
+**NOT verifiable without hardware / a lab — treat as design goals:**
+- **Power / EM side-channel resistance** — the heart of Law II. The blinded LUT,
+  constant-time selects, and arithmetic are branchless *by construction*, but no
+  oscilloscope / EM / DPA measurement has been performed, and host timing cannot
+  observe this channel. Power-analysis resistance is a **goal, not a proven
+  property**.
+- **Fault-injection resistance** (voltage/clock/EM glitching) — the canary +
+  double-run + watchdog mechanisms are implemented and their *logic* runs on
+  host, but they have not been validated against a real glitcher.
+- **On-target footprint and timing** — the ATmega figures in this README predate
+  the AVR fix and could not have come from the current code path as written (the
+  metadata reads were broken on AVR). Re-measure on real hardware before
+  trusting them.
+
+If you are deploying this where the adversary model in `docs/threat_model.md`
+actually holds, the power/EM and fault-injection properties need a hardware
+evaluation that has not been done here.
 
 ---
 
@@ -417,6 +480,13 @@ A follow-on pass tightening test quality and verifiability.
   `#error`. Supported quantizations are **Q8, Q4, and binary**. (The
   `MNV_ACT_BYTES` byte-length machinery it motivated is retained — correct and
   forward-compatible.)
+- **Documentation honesty (H6).** Added the [Verification Status](#verification-status)
+  section stating plainly what is host-verified, what is construction-only, and
+  what needs hardware/a lab; softened "military-grade" to "designed for";
+  grounded the Three Laws; flagged the historical ATmega numbers as
+  re-measure-on-hardware; and reworked the threat-model guarantees table from
+  bare ✓ marks to a "verified how" column (power/EM and fault-injection are
+  marked *goal only / not measured*).
 
 ---
 
@@ -444,6 +514,11 @@ h0 = np.maximum(0, np.clip(
 ---
 
 ## Stress Test Results (simavr, ATmega328P @ 16 MHz)
+
+> ⚠️ **Historical — re-measure on hardware.** These figures predate the AVR
+> PROGMEM metadata fix and could not have come from the current code path as
+> written (the crypto-header/descriptor reads were broken on AVR). Kept for
+> context only. See [Verification Status](#verification-status).
 
 Model: 8->16->8->4 MLP, Q8, 4-class sensor classification, 99.2% float accuracy.
 
