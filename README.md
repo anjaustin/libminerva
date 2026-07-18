@@ -380,6 +380,21 @@ A follow-on pass tightening test quality and verifiability.
   leak, on host, for the compare. It says nothing about **power/EM** leakage
   (e.g. the activation-LUT address channel) — that is invisible to a host and
   needs an oscilloscope. See [Verification status](#verification-status).
+- **AVR access-pattern lock (H3).** Two host locks + one on-target scaffold guard
+  the AVR PROGMEM metadata fix against regression:
+  - `tests/host/test_progmem_split.c` — recreates the Harvard flash/RAM split on
+    the host: `encrypted_weights` points at a **poisoned** buffer and a shim
+    redirects `pgm_read_byte` to the real bytes, so a correct engine (blob read
+    only via `pgm_read`) succeeds while any *direct* blob read hits the poison
+    and the MAC fails. Verified it catches a reverted (direct-read) engine.
+  - `tests/host/check_progmem_placement.sh` — compiles a model for `atmega328p`
+    and asserts the compiler emits the crypto header and layer descriptors in
+    **RAM** and the weight blob in **flash** (`PROGMEM`).
+  - `examples/atmega328p_selftest/` — a self-contained on-target self-test
+    (builds a model in RAM, runs `init`/`run`/`verify` vs a reference, signals
+    PASS/FAIL on D13 and `selftest_result`). **Untested in the fix environment**
+    (no avr-gcc); its C logic host-compiles clean. Run it (or the classify
+    example) on real AVR / simavr for the hardware sign-off.
 
 ---
 

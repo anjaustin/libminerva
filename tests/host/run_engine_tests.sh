@@ -104,6 +104,24 @@ run_cfg progmem_guard test_progmem_guard.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# PROGMEM access-pattern lock (H3): simulate the Harvard flash/RAM split with a
+# poisoned blob + redirecting pgm_read, so a direct (non-pgm_read) blob read is
+# caught. Built with the shim force-included and MNV_PROGMEM_WEIGHTS forced on.
+echo "=== progmem_split ==="
+if ! $CC $FLAGS -include "$ROOT/tests/host/pgm_shim.h" \
+        -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DMNV_PROGMEM_WEIGHTS \
+        -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
+        -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3 $INC \
+        "$ROOT/tests/host/test_progmem_split.c" \
+        "$ROOT/src/core/mnv_fixed.c" "$ROOT/src/core/mnv_engine.c" "$ROOT/src/arch/mnv_mlp.c" \
+        "$ROOT/src/security/mnv_chacha20.c" "$ROOT/src/security/mnv_blake2s.c" \
+        "$ROOT/src/security/mnv_ct.c" "$ROOT/src/security/mnv_lut.c" \
+        "$ROOT/src/security/mnv_outauth.c" "$ROOT/src/hal/mnv_hal_host.c" \
+        -o "$TMP/progmem_split" 2>"$TMP/split.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/split.berr"; rc=1
+elif ! "$TMP/progmem_split"; then rc=1; fi
+echo
+
 # Constant-time timing-leakage test (H2): mnv_ct_compare vs a leaky early-exit
 # reference, dudect-style Welch t-test. Self-validating (skips if the host is
 # too noisy to detect even the known leak). Needs -lm.
@@ -117,6 +135,11 @@ echo
 
 # Constant-time branch audit (H2). AVR-only meaningful; skips without avr-gcc.
 if ! bash "$ROOT/tests/host/check_ct_branches.sh"; then rc=1; fi
+echo
+
+# PROGMEM placement lock (H3): compiler must emit metadata in RAM, blob in
+# flash. Skips without python3/numpy.
+if ! bash "$ROOT/tests/host/check_progmem_placement.sh"; then rc=1; fi
 echo
 
 # Output-MAC counter guard + wraparound (Item 9). Driven against outauth +
