@@ -104,6 +104,21 @@ run_cfg progmem_guard test_progmem_guard.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# Constant-time timing-leakage test (H2): mnv_ct_compare vs a leaky early-exit
+# reference, dudect-style Welch t-test. Self-validating (skips if the host is
+# too noisy to detect even the known leak). Needs -lm.
+echo "=== ct_timing ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST $INC \
+        "$ROOT/tests/host/test_ct_timing.c" "$ROOT/src/security/mnv_ct.c" -lm \
+        -o "$TMP/ct_timing" 2>"$TMP/ctt.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/ctt.berr"; rc=1
+elif ! "$TMP/ct_timing"; then rc=1; fi
+echo
+
+# Constant-time branch audit (H2). AVR-only meaningful; skips without avr-gcc.
+if ! bash "$ROOT/tests/host/check_ct_branches.sh"; then rc=1; fi
+echo
+
 # Output-MAC counter guard + wraparound (Item 9). Driven against outauth +
 # crypto only; observes via verify() return values.
 echo "=== outauth_counter ==="

@@ -360,6 +360,26 @@ A follow-on pass tightening test quality and verifiability.
   exactly what made a counter assertion look like a compiler "heisenbug" during
   the Item-9 work. Root-caused (not a miscompile — the macro), and fixed: `CHECK`
   and `test_host.c`'s `ASSERT_EQ`/`ASSERT_NEQ` now evaluate each operand once.
+- **Constant-time assurance (H2).** Two additions turn Law II's timing claim from
+  asserted to (partly) *tested*:
+  - `tests/host/test_ct_timing.c` — a dudect-style Welch's t-test that measures
+    whether `mnv_ct_compare`'s execution time depends on the data, against a
+    deliberately leaky early-exit reference. It is **self-validating**: the leaky
+    reference must show a large t-statistic (proving the harness detects a leak
+    on this machine) or the test skips; `mnv_ct_compare` must then show `|t|`
+    far below the leaky reference and below the dudect 4.5 threshold. Observed
+    `|t|`: leaky ≈ 260–1800, `mnv_ct_compare` ≈ 0.4–1.6.
+  - `tests/host/check_ct_branches.sh` — a branch audit for the straight-line CT
+    helpers. Note: a **host** audit is *vacuous* — clang canonicalizes both the
+    branchless mask idiom and a plain `if` into a conditional-select (`csel`),
+    so host disassembly can't distinguish them. The audit is therefore
+    **avr-gcc-only** (AVR has no conditional-move, so `if` becomes a real
+    branch); it skips cleanly without the AVR toolchain.
+
+  **Scope, honestly:** the timing test covers only the *early-exit* class of
+  leak, on host, for the compare. It says nothing about **power/EM** leakage
+  (e.g. the activation-LUT address channel) — that is invisible to a host and
+  needs an oscilloscope. See [Verification status](#verification-status).
 
 ---
 
