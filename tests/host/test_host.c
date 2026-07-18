@@ -34,9 +34,12 @@
 #define PASS "\033[32mPASS\033[0m"
 #define FAIL "\033[31mFAIL\033[0m"
 #define TEST(n) printf("  %-52s ", n)
-#define ASSERT_EQ(a,b)  do { if((a)==(b)) printf(PASS"\n"); else { printf(FAIL" (got %d want %d)\n",(int)(a),(int)(b)); failures++; } } while(0)
+/* Evaluate each argument ONCE (temps) — the operands may be side-effecting
+ * calls (e.g. mnv_lut_sigmoid_blinded advances a PRNG), and a macro that
+ * re-evaluates them would run the call twice. */
+#define ASSERT_EQ(a,b)  do { int _a=(int)(a), _b=(int)(b); if(_a==_b) printf(PASS"\n"); else { printf(FAIL" (got %d want %d)\n",_a,_b); failures++; } } while(0)
 #define ASSERT_OK(s)    ASSERT_EQ((s), MNV_OK)
-#define ASSERT_NEQ(a,b) do { if((a)!=(b)) printf(PASS"\n"); else { printf(FAIL" (expected !=)\n"); failures++; } } while(0)
+#define ASSERT_NEQ(a,b) do { int _a=(int)(a), _b=(int)(b); if(_a!=_b) printf(PASS"\n"); else { printf(FAIL" (expected !=)\n"); failures++; } } while(0)
 
 static int failures = 0;
 

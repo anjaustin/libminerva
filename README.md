@@ -347,6 +347,20 @@ sign-off still wants a run on real AVR** (no AVR toolchain in the fix
 environment). The device **key** placement remains the user's responsibility via
 `secrets.h` (per the threat model, provisioned from EEPROM/fuse).
 
+### Hardening pass
+
+A follow-on pass tightening test quality and verifiability.
+
+- **Test `CHECK` macro double-evaluation (H1).** The `CHECK(cond, msg)` macro in
+  the host tests evaluated `cond` twice (once for the PASS/FAIL print, once for
+  the failure count). Any test that passed a *side-effecting* call as the
+  condition — e.g. `CHECK(mnv_run(...) == MNV_OK, …)` — therefore ran the
+  inference **twice** (25 such sites). Harmless where only the return was
+  checked, but it silently double-incremented the inference counter, which is
+  exactly what made a counter assertion look like a compiler "heisenbug" during
+  the Item-9 work. Root-caused (not a miscompile — the macro), and fixed: `CHECK`
+  and `test_host.c`'s `ASSERT_EQ`/`ASSERT_NEQ` now evaluate each operand once.
+
 ---
 
 ## Python Validation Note

@@ -18,8 +18,9 @@
 
 static int fails = 0;
 #define CHECK(cond, msg) do { \
-    printf("  %-52s %s\n", (msg), (cond) ? "PASS" : "FAIL"); \
-    if (!(cond)) fails++; } while (0)
+    int _ok = (cond); \
+    printf("  %-52s %s\n", (msg), _ok ? "PASS" : "FAIL"); \
+    if (!_ok) fails++; } while (0)
 
 /* 8 ->(sign)8 ->(sign)8 ->(linear)4, all input widths multiple of 8 */
 #define IN   MNV_INPUT_SIZE      /* 8 */
