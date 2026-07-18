@@ -275,8 +275,9 @@ a regression test for each fix.
   scalars `input_len`, `pool_size`. Build with `-DMNV_ARCH_CNN1D -I<out>`. A
   compiler-emit test quantizes the float model independently (its own
   transpose) and checks the engine output matches — verified it catches a
-  wrong transpose and a wrong section order. The dense right-shift is a
-  heuristic (`ceil(log2(FLAT))+7`); calibration is future work.
+  wrong transpose and a wrong section order. The dense right-shift defaults to a
+  heuristic (`ceil(log2(FLAT))+7`) but is data-derived with `--calibrate` (see
+  the hardening pass, H4).
 - **Branchless clamp (low, Law II)** — `mnv_q8_clamp` was documented
   constant-time but used `if` branches; the old comment claimed the compiler
   emits `cmov`, but AVR (the primary target) has no conditional-move
@@ -395,6 +396,18 @@ A follow-on pass tightening test quality and verifiability.
     PASS/FAIL on D13 and `selftest_result`). **Untested in the fix environment**
     (no avr-gcc); its C logic host-compiles clean. Run it (or the classify
     example) on real AVR / simavr for the hardware sign-off.
+- **CNN1D calibration + accuracy measurement (H4).** The dense right-shift was a
+  fixed `ceil(log2(FLAT))+7` heuristic that ignores the actual weight/activation
+  magnitudes — it can over-shift and collapse every output toward zero. Added
+  `--calibrate` for CNN1D: it runs calibration data through the quantized
+  conv→relu→pool→dense forward and picks the shift so the 99.5th-percentile
+  dense accumulator uses the int8 range without saturating.
+  `tests/host/test_cnn_accuracy.sh` then *measures* fidelity — argmax agreement
+  between the Q8 engine and the float model on a held-out set. On a random
+  4-class model the heuristic scores ~3.5% (near-random, outputs saturated) and
+  the calibrated shift ~59.5%; a trained model scores higher (this measures
+  quantization fidelity, and the point is calibration ≫ heuristic). Bias PTQ for
+  the conv/dense layers remains future work.
 
 ---
 

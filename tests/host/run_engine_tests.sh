@@ -203,6 +203,9 @@ if ! bash "$ROOT/tests/host/test_compiler_emit.sh";     then rc=1; fi
 echo
 if ! bash "$ROOT/tests/host/test_compiler_emit_cnn.sh"; then rc=1; fi
 echo
+# CNN1D quantization accuracy: calibrated dense shift vs heuristic (H4).
+if ! bash "$ROOT/tests/host/test_cnn_accuracy.sh"; then rc=1; fi
+echo
 
 if [ "$rc" -eq 0 ]; then echo "ALL ENGINE CONFIGS PASSED"; else echo "ENGINE TESTS FAILED"; fi
 exit $rc
