@@ -50,6 +50,43 @@ static mnv_status_t engine_forward(mnv_ctx_t          *ctx,
 #endif
 }
 
+/* Compute the BLAKE2s MAC over the encrypted weight blob and constant-time
+ * compare it to the stored MAC. Shared by mnv_init() and mnv_verify() so BOTH
+ * use the AVR-safe chunked pgm_read path — mnv_verify() previously called
+ * mnv_blake2s_verify(), whose plain memcpy of a PROGMEM address reads RAM
+ * (garbage) on AVR. model->crypto->mac lives in RAM (see the compiler), so the
+ * direct read of it here is correct on every target. */
+static mnv_status_t engine_verify_weight_mac(const mnv_model_t *model)
+{
+    mnv_blake2s_ctx_t bctx;
+    mnv_blake2s_init(&bctx, model->key, (uint8_t)MNV_CHACHA20_KEY_SIZE);
+#if defined(MNV_PROGMEM_WEIGHTS)
+    /* AVR: read the flash blob in 64B chunks via pgm_read_byte. */
+    {
+        uint8_t chunk[64];
+        uint32_t remaining = model->encrypted_len;   /* <= 0xFFFF on AVR */
+        uint32_t offset    = 0;
+        while (remaining > 0) {
+            uint16_t n = (remaining > 64U) ? 64U : (uint16_t)remaining;
+            for (uint16_t i = 0; i < n; i++)
+                chunk[i] = pgm_read_byte(model->encrypted_weights + offset + i);
+            mnv_blake2s_update(&bctx, chunk, n);
+            offset    += n;
+            remaining -= n;
+        }
+        mnv_secure_zero(chunk, sizeof(chunk));
+    }
+#else
+    mnv_blake2s_update(&bctx, model->encrypted_weights, model->encrypted_len);
+#endif
+    uint8_t computed_mac[MNV_BLAKE2S_DIGEST_SIZE];
+    mnv_blake2s_final(&bctx, computed_mac);
+    uint8_t diff = mnv_ct_compare(computed_mac, model->crypto->mac,
+                                  MNV_BLAKE2S_DIGEST_SIZE);
+    mnv_secure_zero(computed_mac, sizeof(computed_mac));
+    return (diff == 0) ? MNV_OK : MNV_ERR_TAMPER;
+}
+
 /* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
 mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
@@ -97,39 +134,9 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
     ctx->prng_state        = (uint32_t)MNV_PRNG_SEED_DEFAULT;
     ctx->inference_counter = 0U;
 
-    /* Law I — integrity before anything.
-     * On AVR with PROGMEM weights, read ciphertext in 64B chunks
-     * via pgm_read_byte to avoid copying 492B to SRAM. */
-    mnv_status_t s;
-    {
-        mnv_blake2s_ctx_t bctx;
-        mnv_blake2s_init(&bctx, model->key, (uint8_t)MNV_CHACHA20_KEY_SIZE);
-#if defined(MNV_PROGMEM_WEIGHTS)
-        {
-            uint8_t chunk[64];
-            uint32_t remaining = model->encrypted_len;   /* <= 0xFFFF on AVR */
-            uint32_t offset    = 0;
-            while (remaining > 0) {
-                uint16_t n = (remaining > 64U) ? 64U : (uint16_t)remaining;
-                for (uint16_t i = 0; i < n; i++)
-                    chunk[i] = pgm_read_byte(model->encrypted_weights + offset + i);
-                mnv_blake2s_update(&bctx, chunk, n);
-                offset    += n;
-                remaining -= n;
-            }
-            mnv_secure_zero(chunk, sizeof(chunk));
-        }
-#else
-        mnv_blake2s_update(&bctx, model->encrypted_weights, model->encrypted_len);
-#endif
-        uint8_t computed_mac[MNV_BLAKE2S_DIGEST_SIZE];
-        mnv_blake2s_final(&bctx, computed_mac);
-        uint8_t diff = mnv_ct_compare(computed_mac,
-                                       model->crypto->mac,
-                                       MNV_BLAKE2S_DIGEST_SIZE);
-        mnv_secure_zero(computed_mac, sizeof(computed_mac));
-        s = (diff == 0) ? MNV_OK : MNV_ERR_TAMPER;
-    }
+    /* Law I — integrity before anything. Uses the AVR-safe chunked pgm_read
+     * path (see engine_verify_weight_mac). */
+    mnv_status_t s = engine_verify_weight_mac(model);
     if (s != MNV_OK) { mnv_secure_zero(ctx, sizeof(mnv_ctx_t)); return MNV_ERR_TAMPER; }
 
     /* Bind the verified model to the context. Inference is permitted only
@@ -257,10 +264,9 @@ mnv_status_t mnv_verify(mnv_ctx_t *ctx, const mnv_model_t *model)
      * caller could validate model A and leave the context "verified" while
      * mnv_run() still executes the bound model. */
     if (model != ctx->model)  return MNV_ERR_CONFIG;
-    mnv_status_t s = mnv_blake2s_verify(
-        model->key, (uint8_t)MNV_CHACHA20_KEY_SIZE,
-        model->encrypted_weights, model->encrypted_len,
-        model->crypto->mac);
+    /* Same AVR-safe chunked read as mnv_init (not mnv_blake2s_verify, whose
+     * direct memcpy of the PROGMEM blob reads garbage on AVR). */
+    mnv_status_t s = engine_verify_weight_mac(model);
     ctx->verified = (s == MNV_OK);
     return s;
 }

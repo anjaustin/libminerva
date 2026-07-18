@@ -25,8 +25,9 @@
 
 static int fails = 0;
 #define CHECK(cond, msg) do { \
-    printf("  %-52s %s\n", (msg), (cond) ? "PASS" : "FAIL"); \
-    if (!(cond)) fails++; } while (0)
+    int _ok = (cond); \
+    printf("  %-52s %s\n", (msg), _ok ? "PASS" : "FAIL"); \
+    if (!_ok) fails++; } while (0)
 
 /* ── topology ─────────────────────────────────────────────────────────────── */
 #define IN   MNV_INPUT_SIZE

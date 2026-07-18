@@ -146,19 +146,28 @@ Minerva assumes an adversary with:
 
 ---
 
-## 5. Security Properties (v1.0 Guarantees)
+## 5. Security Properties
 
-| Property | Guaranteed | Notes |
-|---|---|---|
-| Weight confidentiality | ✓ | ChaCha20-256 encryption |
-| Weight integrity | ✓ | BLAKE2s-256 MAC |
-| Tamper detection (flash) | ✓ | MAC check at init and on demand |
-| Fault injection detection | ✓ | Canaries + double-run |
-| Constant-time arithmetic | ✓ | No data-dependent branches |
-| Cache-timing resistance | ✓ | ChaCha20 (no S-box) |
-| Power-analysis resistance | Partial | Blinded LUT access shipped v1.1 |
-| Adversarial input detection | Partial | Range + confidence check only |
-| Output authentication | ✓ | Session MAC, shipped v1.1 |
+> **Verification note (added post-1.3).** "Design intent" below means the
+> mechanism is implemented and, where possible, its *logic* is tested on host —
+> it does **not** mean the property has been measured on the target hardware.
+> In particular, power/EM resistance and fault-injection resistance have **not**
+> been validated with a scope or a glitcher. See the README "Verification
+> Status" section for exactly what is host-verified vs construction-only vs
+> lab-required.
+
+| Property | Status | Verified how | Notes |
+|---|---|---|---|
+| Weight confidentiality | Design intent | — | ChaCha20-256 encryption |
+| Weight integrity | Host-tested | tamper→`MNV_ERR_TAMPER` | BLAKE2s-256 MAC |
+| Tamper detection (flash) | Host-tested | init + `mnv_verify` tests | MAC at init and on demand |
+| Fault-injection **detection** | Design intent | logic runs on host | canaries + double-run; **resistance not lab-tested** |
+| Constant-time arithmetic (timing) | Host-tested | dudect timing test (compare) | branchless by construction elsewhere |
+| Constant-time on AVR (no cmov) | Construction | avr-gcc branch audit (not run here) | host audit is vacuous |
+| Cache-timing resistance | Design intent | — | ChaCha20 (no S-box) |
+| Power / EM resistance | **Goal only** | **not measured** | blinded LUT etc.; needs an oscilloscope/DPA |
+| Adversarial input detection | Partial | range + confidence tests | inference-time only |
+| Output authentication | Host-tested | outauth round-trip/wraparound | session MAC |
 
 ---
 

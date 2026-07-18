@@ -21,8 +21,9 @@
 
 static int fails = 0;
 #define CHECK(cond, msg) do { \
-    printf("  %-56s %s\n", (msg), (cond) ? "PASS" : "FAIL"); \
-    if (!(cond)) fails++; } while (0)
+    int _ok = (cond); \
+    printf("  %-56s %s\n", (msg), _ok ? "PASS" : "FAIL"); \
+    if (!_ok) fails++; } while (0)
 
 /* PRNG state after one mnv_prng_mask8() draw from `seed`. */
 static uint32_t after_one_draw(uint32_t seed)

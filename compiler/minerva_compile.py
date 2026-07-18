@@ -214,13 +214,18 @@ class Compiler:
            '','#include "weights.h"','#include "minerva.h"','#include "secrets.h"']
         if self.progmem: L.append('#include <avr/pgmspace.h>')
         L+=['',self._ca('mnv_encrypted_weights',ct),'']
-        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr {pm} = {{',
+        # Crypto header stays in RAM (no PROGMEM): the engine reads
+        # mnv_crypto_hdr.iv/.mac with a plain dereference, which returns garbage
+        # from a PROGMEM address on AVR. Only the large weight blob is PROGMEM.
+        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr = {{',
             '    .iv  = {'+', '.join(f'0x{b:02X}' for b in nonce)+'},',
             '    .mac = {'+', '.join(f'0x{b:02X}' for b in mac)+'},',
             f'    .weight_count = {sum(o[1] for o in offsets)}U,',
             f'    .bias_count   = {sum(o[2] for o in offsets)}U,',
             '};','']
-        L.append(f'const mnv_layer_desc_t mnv_layers[{len(m.layers)}] {pm} = {{')
+        # Layer descriptors stay in RAM (no PROGMEM) so the engine can read
+        # input_size/output_size/activation with a plain dereference on AVR.
+        L.append(f'const mnv_layer_desc_t mnv_layers[{len(m.layers)}] = {{')
         for i,layer in enumerate(m.layers):
             act=ACT_MAP.get(layer.activation.lower(),'MNV_ACT_RELU')
             L+=[f'    [{i}] = {{',f'        .input_size  = {layer.in_size}U,',
@@ -314,7 +319,48 @@ class CnnCompiler:
             sys.exit(f"CNN shape mismatch: F*pool_len={self.F*self.pool_len} != dense FLAT={self.FLAT} "
                      f"(F={self.F}, conv_len={self.conv_len}, pool={self.pool}, pool_len={self.pool_len})")
         # Dense right-shift heuristic (matches mnv_config.h comment): ceil(log2 FLAT)+7.
+        # Replaced by a data-derived value when calibrate_shift() is called.
         self.shift=(self.FLAT-1).bit_length()+7
+        self.calibrated=False
+
+    def _quant_dense_acc(self, X_q8):
+        """Run the QUANTIZED conv->relu->maxpool->dense forward (mirroring the
+        engine) and return the pre-shift dense accumulators for a batch of Q8
+        inputs X_q8 (shape [N, input_len], int). Used to size the dense shift."""
+        c8=lambda a:np.clip(a,-128,127)
+        cw=_q8_arr(self.conv_w).reshape(self.F,self.K).astype(np.int64)
+        cb=_q8_arr(self.conv_b).astype(np.int64)
+        dW=_q8_arr(self.dense_w.T).reshape(self.OUT,self.FLAT).astype(np.int64)
+        N=X_q8.shape[0]; CL=self.conv_len; PL=self.pool_len
+        accs=[]
+        for x in X_q8.astype(np.int64):
+            feat=np.zeros(self.FLAT,dtype=np.int64)
+            for f in range(self.F):
+                conv=np.empty(CL,dtype=np.int64)
+                for i in range(CL):
+                    a=int(np.dot(cw[f], x[i:i+self.K]))
+                    conv[i]=max(0, int(c8((a>>7)+cb[f])))     # engine: >>7 +bias, clamp, relu
+                for p in range(PL):
+                    feat[f*PL+p]=int(np.max(conv[p*self.pool:(p+1)*self.pool]))
+            accs.append(dW @ feat)                            # pre-shift dense acc
+        return np.abs(np.array(accs)).ravel()
+
+    def calibrate_shift(self, X_calib, pct=99.5, target=120):
+        """Pick the dense right-shift from calibration data: the smallest shift S
+        such that the `pct` percentile of |dense_acc| maps to <= `target`
+        (near the int8 max of 127, using the range without saturating). This
+        replaces the ceil(log2 FLAT)+7 heuristic, which ignores the actual
+        weight/activation magnitudes and can saturate or waste the output range."""
+        Xq=np.clip(np.round(X_calib.astype(np.float32)*127.0),-128,127).astype(np.int64)
+        mag=self._quant_dense_acc(Xq)
+        p=float(np.percentile(mag, pct)) if mag.size else 0.0
+        S=0
+        while S<31 and (p/(1<<S))>target:
+            S+=1
+        self.shift=S; self.calibrated=True
+        print(f"  [CNN PTQ] |dense_acc| p{pct}={p:.0f} -> dense_shift={S} "
+              f"(heuristic was {(self.FLAT-1).bit_length()+7})")
+        return S
 
     def _ca(self,name,data):
         pm=' PROGMEM' if self.progmem else ''
@@ -371,7 +417,10 @@ class CnnCompiler:
            '#include "weights.h"','#include "minerva.h"','#include "secrets.h"']
         if self.progmem: L.append('#include <avr/pgmspace.h>')
         L+=['',self._ca('mnv_encrypted_weights',ct),'']
-        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr {pm} = {{',
+        # Crypto header stays in RAM (no PROGMEM): the engine reads
+        # mnv_crypto_hdr.iv/.mac with a plain dereference, which returns garbage
+        # from a PROGMEM address on AVR. Only the large weight blob is PROGMEM.
+        L+=[f'const mnv_crypto_header_t mnv_crypto_hdr = {{',
             '    .iv  = {'+', '.join(f'0x{b:02X}' for b in nonce)+'},',
             '    .mac = {'+', '.join(f'0x{b:02X}' for b in mac)+'},',
             f'    .weight_count = {wcount}U,',
@@ -423,6 +472,13 @@ def main():
     _raw=np.load(str(path),allow_pickle=True)
     if 'conv_w' in _raw:
         cc=CnnCompiler(_raw,key,args.target)
+        if args.calibrate:
+            cp=Path(args.calibrate)
+            if not cp.exists(): sys.exit(f'Calib not found: {cp}')
+            cd=np.load(str(cp),allow_pickle=True)
+            if 'X' not in cd: sys.exit('Calibration .npz must have key "X" [N, input_len]')
+            print(f'[minerva] CNN1D PTQ calibration: {len(cd["X"])} samples')
+            cc.calibrate_shift(cd['X'].astype(np.float32))
         print(f'          CNN1D: in={cc.input_len} K={cc.K} F={cc.F} pool={cc.pool} '
               f'-> flat={cc.FLAT} -> out={cc.OUT} (dense_shift={cc.shift})')
         if args.quant!='q8':
@@ -435,10 +491,12 @@ def main():
         if args.dump_weights:
             np.savez(str(out/'weights_debug.npz'),**debug)
             print(f'[minerva] Debug weights: {out}/weights_debug.npz')
-        print(f'[minerva] Compiled CNN1D (Q8, independent scales).')
+        print(f'[minerva] Compiled CNN1D (Q8, dense_shift={cc.shift} '
+              f'[{"calibrated" if cc.calibrated else "heuristic"}]).')
         print(f'          weights.c + weights.h + mnv_model_dims.h -> {out}')
         print(f'          Build EVERY .c (engine + app) with -DMNV_ARCH_CNN1D -I{out}.')
-        print(f'          NOTE: dense_shift is a heuristic; calibrate for best accuracy.')
+        if not cc.calibrated:
+            print(f'          NOTE: dense_shift is a heuristic; pass --calibrate for accuracy.')
         return
 
     model=load_npz(str(path))

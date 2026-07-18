@@ -50,12 +50,13 @@ MNV_STATIC_ASSERT(
     sram_budget_exceeded
 );
 
-/* Q15 only on targets with enough RAM */
+/* Q15 (16-bit) was advertised but never functional: the fixed-point core
+ * (mnv_fixed.c) narrows to int8, the int32 accumulator overflows for N>=3
+ * 16-bit terms, the >>7 shift / int8 clamp are Q8-specific, and sigmoid/tanh
+ * would need a 65536-entry int16 LUT (infeasible on an MCU). It was removed
+ * rather than shipped broken — use Q8/Q4/binary. Fail loudly if selected. */
 #if defined(MNV_QUANT_Q15)
-MNV_STATIC_ASSERT(
-    MNV_SRAM_BYTES >= 4096U,
-    q15_requires_at_least_4kb_sram
-);
+#  error "MNV_QUANT_Q15 is not supported (removed as non-functional). Use Q8, Q4, or BINARY."
 #endif
 
 /* =========================================================================
@@ -84,15 +85,6 @@ MNV_STATIC_ASSERT(
     #define MNV_Q_MIN      -8
     #define MNV_Q_MAX       7
 
-#elif defined(MNV_QUANT_Q15)
-    typedef int16_t  mnv_weight_t;
-    typedef int16_t  mnv_act_t;
-    typedef int32_t  mnv_acc_t;
-    typedef int16_t  mnv_bias_t;
-    #define MNV_Q_SCALE     32767
-    #define MNV_Q_MIN      -32768
-    #define MNV_Q_MAX       32767
-
 #elif defined(MNV_QUANT_BINARY)
     typedef uint8_t  mnv_weight_t;    /* packed bits: 8 weights per byte  */
     typedef int8_t   mnv_act_t;
@@ -103,10 +95,11 @@ MNV_STATIC_ASSERT(
     #define MNV_Q_MAX       1
 #endif
 
-/* Byte length of a vector of N activation elements. mnv_act_t is 1 byte for
- * Q8/Q4/binary but 2 bytes for Q15, so ANY byte-oriented operation over an
- * activation vector — memcpy, mnv_secure_zero, mnv_ct_compare — must use this,
- * NOT the raw element count (which would cover only half a Q15 vector). */
+/* Byte length of a vector of N activation elements. mnv_act_t is 1 byte for all
+ * current quantizations (Q8/Q4/binary), so this equals n today — but every
+ * byte-oriented operation over an activation vector (memcpy, mnv_secure_zero,
+ * mnv_ct_compare) uses it rather than the raw element count, so the code stays
+ * correct if a multi-byte activation type is ever added. */
 #define MNV_ACT_BYTES(n)  ((size_t)(n) * sizeof(mnv_act_t))
 
 /* =========================================================================
@@ -149,14 +142,13 @@ typedef struct {
     uint16_t      input_size;
     uint16_t      output_size;
     mnv_act_fn_t  activation;
-    /* Pointers into the weight/bias arrays in flash (PROGMEM on AVR) */
-#if defined(MNV_PROGMEM_WEIGHTS)
-    const mnv_weight_t * PROGMEM weights;
-    const mnv_bias_t   * PROGMEM biases;
-#else
+    /* Vestigial (emitted NULL): the engine reads weights from the decrypted
+     * blob, not through these. The layer descriptor array lives in RAM (NOT
+     * PROGMEM) on every target so the engine can read the sizes above with a
+     * plain dereference — on AVR a PROGMEM descriptor would need pgm_read and
+     * a direct read returns garbage. Keep these plain pointers accordingly. */
     const mnv_weight_t *weights;
     const mnv_bias_t   *biases;
-#endif
 } mnv_layer_desc_t;
 
 /* =========================================================================
@@ -169,13 +161,9 @@ typedef struct {
     uint16_t      kernel_size;
     uint16_t      pool_size;
     mnv_act_fn_t  activation;
-#if defined(MNV_PROGMEM_WEIGHTS)
-    const mnv_weight_t * PROGMEM kernels;
-    const mnv_bias_t   * PROGMEM biases;
-#else
+    /* Vestigial; descriptor lives in RAM (see mnv_layer_desc_t). Plain ptrs. */
     const mnv_weight_t *kernels;
     const mnv_bias_t   *biases;
-#endif
 } mnv_conv1d_desc_t;
 
 /* =========================================================================

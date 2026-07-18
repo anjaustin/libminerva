@@ -19,8 +19,9 @@
 
 static int fails = 0;
 #define CHECK(cond, msg) do { \
-    printf("  %-52s %s\n", (msg), (cond) ? "PASS" : "FAIL"); \
-    if (!(cond)) fails++; } while (0)
+    int _ok = (cond); \
+    printf("  %-52s %s\n", (msg), _ok ? "PASS" : "FAIL"); \
+    if (!_ok) fails++; } while (0)
 
 #define IN   MNV_INPUT_SIZE
 #define H0   MNV_LAYER_0_SIZE
@@ -77,6 +78,15 @@ int main(void) {
         for (int i = 0; i < IN; i++) in[i] = (int8_t)(i - 3);
         CHECK(mnv_run(&ctx, in, out) == MNV_OK, "run via PROGMEM decrypt -> OK");
     }
+
+    /* Re-verification (mnv_verify) must use the same chunked pgm_read path, not
+     * a direct memcpy of the PROGMEM blob. ct is what M.encrypted_weights points
+     * to, so tampering it in place and restoring exercises both outcomes. */
+    CHECK(mnv_verify(&ctx, &M) == MNV_OK, "re-verify via PROGMEM read -> OK");
+    ct[7] ^= 0x08;
+    CHECK(mnv_verify(&ctx, &M) == MNV_ERR_TAMPER,
+          "re-verify tampered blob via PROGMEM read -> TAMPER");
+    ct[7] ^= 0x08;  /* restore */
 
     /* AVR near-pointer guard: a blob claiming > 64 KB must be rejected up front
      * (before any flash read), because pgm_read_byte uses a 16-bit pointer. */

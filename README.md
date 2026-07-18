@@ -22,14 +22,20 @@ Small. Secure. Certain.
 ```
 
 Minerva is a pure C ML inference library for microcontrollers, from ATtiny85 to
-STM32, with military-grade security properties. It runs encrypted,
-integrity-verified neural networks with constant-time execution, anti-glitch
+STM32, *designed for* defense-in-depth security. It runs encrypted,
+integrity-verified neural networks with constant-time arithmetic, anti-glitch
 canaries, blinded LUT activations, output authentication, and zero dynamic
 allocation.
 
+**Read [Verification Status](#verification-status) first.** Some of those
+properties are verified by the test suite, some are correct by construction but
+unmeasured, and some (power/EM and fault-injection resistance) are design goals
+that require hardware this project has not run. The security posture is real,
+but treat each claim at the assurance level stated there — not as a guarantee.
+
 The smallest supported target is an **ATmega328P** (32 KB flash, 2 KB RAM).
-A 3-layer MLP runs in ~14.5 KB flash at ~28 ms/inference including all
-security overhead.
+The ATmega footprint/timing figures quoted below predate the AVR PROGMEM fix
+(H-series) and must be re-measured on hardware — see Verification Status.
 
 ---
 
@@ -43,6 +49,11 @@ security overhead.
 
 > **III. Stillness** - Minerva never allocates dynamically. Every byte it will
 > ever use is known at compile time.
+
+*These are design principles. Law III (no allocation) is enforced and checkable;
+Law I (integrity-before-output) is tested on host; Law II (no timing/power/output
+leakage) is only partially verifiable without a lab — see
+[Verification Status](#verification-status).*
 
 ---
 
@@ -142,6 +153,58 @@ void loop(void) {
 The +56 B flash and +2 ms for int32 accumulator is the correct engineering
 tradeoff: int16 overflows for any layer with more than 2 inputs.
 
+*These ATmega numbers are historical and predate the AVR PROGMEM fix — see
+[Verification Status](#verification-status). Re-measure on hardware.*
+
+---
+
+## Verification Status
+
+Minerva is a security-*oriented* library. This section states plainly what is
+actually verified, what is correct by construction but unmeasured, and what
+needs hardware or a lab this project has not run. Trust each property only at
+the level stated here.
+
+**Verified on host** (automated suite, ASan + UBSan; `run_engine_tests.sh`):
+- Engine arithmetic (MLP / CNN1D / BNN) matches an independent integer reference.
+- The compiler's emitted C compiles and its output matches a Python reference
+  (MLP + CNN1D) — including weight transpose, blob section order, and dense shift.
+- Integrity/authentication: tampered ciphertext → `MNV_ERR_TAMPER`; model binding
+  at `mnv_init`; output-MAC verification, replay counter, and the 2³² wraparound.
+- Topology-mismatch rejection; the >64 KB length path; per-layer buffer sizing.
+- **Constant-time *timing*** of `mnv_ct_compare` (dudect-style Welch t-test vs a
+  leaky control that must itself show the leak).
+- The AVR flash/RAM access pattern, *simulated* on host (a poisoned-blob lock
+  proves the weight blob is read only via `pgm_read`) plus a codegen placement
+  check (metadata in RAM, blob in flash).
+
+**Correct by construction / inspection — NOT measured on the target:**
+- Constant-time execution on **AVR** (which has no conditional-move): checkable
+  by an `avr-gcc` branch audit *when that toolchain is present*; a host audit is
+  vacuous (clang emits `csel` for both branchless and branchy source), so it was
+  not verified in this environment.
+- The AVR **PROGMEM metadata fix**: correct by codegen inspection + host
+  simulation, but **not run on real AVR** (no toolchain here). An untested
+  on-target self-test (`examples/atmega328p_selftest/`) is provided for sign-off.
+
+**NOT verifiable without hardware / a lab — treat as design goals:**
+- **Power / EM side-channel resistance** — the heart of Law II. The blinded LUT,
+  constant-time selects, and arithmetic are branchless *by construction*, but no
+  oscilloscope / EM / DPA measurement has been performed, and host timing cannot
+  observe this channel. Power-analysis resistance is a **goal, not a proven
+  property**.
+- **Fault-injection resistance** (voltage/clock/EM glitching) — the canary +
+  double-run + watchdog mechanisms are implemented and their *logic* runs on
+  host, but they have not been validated against a real glitcher.
+- **On-target footprint and timing** — the ATmega figures in this README predate
+  the AVR fix and could not have come from the current code path as written (the
+  metadata reads were broken on AVR). Re-measure on real hardware before
+  trusting them.
+
+If you are deploying this where the adversary model in `docs/threat_model.md`
+actually holds, the power/EM and fault-injection properties need a hardware
+evaluation that has not been done here.
+
 ---
 
 ## What Changed in v1.2
@@ -202,8 +265,8 @@ A full audit and remediation pass. Highlights:
 - **BNN** — fixed multi-layer ciphertext offset tracking, added per-layer
   bias handling, and replaced the byte-popcount dot product with a
   bit-addressed one that is correct for non-multiple-of-8 layer widths.
-  `MNV_QUANT_BINARY`/`Q4`/`Q15` are now actually selectable (Q8 no longer
-  forced on).
+  `MNV_QUANT_BINARY`/`Q4` are now actually selectable (Q8 no longer forced on).
+  (Q15 was later removed as non-functional — see the hardening pass, H5.)
 - **Buffer sizing** — activation, weight-scratch, and bias buffers are sized
   to the widest layer, not layer 0 (previously overflowed when a hidden layer
   was wider than the input).
@@ -255,16 +318,14 @@ a regression test for each fix.
   host builds ran under ATmega constraints. The default is now guarded so an
   explicit command-line target wins; ATmega328P remains the default when none
   is given.
-- **Q15 byte-length confusion (medium)** — under Q15 `mnv_act_t` is 2 bytes, but
-  the double-run compare, the output/scratch zeroing, and (security-relevant)
-  the output-MAC buffer treated `MNV_*_SIZE` element counts as byte counts, so
-  the upper byte of every Q15 element sat outside the MAC and could be tampered
-  undetected. Added an `MNV_ACT_BYTES(n)` helper and switched all byte-oriented
-  vector operations to it. Regression test flips the high byte of a Q15
-  output/input element and confirms the MAC now catches it (verified it is
-  missed pre-fix). Note: full Q15 *forward-pass arithmetic* (the dot product
-  still narrows to int8 internally) remains future work — this fix is the
-  byte-length/authentication correctness, which applies whenever Q15 is used.
+- **Byte-length vs element-count (medium)** — the double-run compare, the
+  output/scratch zeroing, and (security-relevant) the output-MAC buffer treated
+  `MNV_*_SIZE` element counts as byte counts. For 1-byte activations this is a
+  no-op, but for a multi-byte activation type the upper bytes would fall outside
+  the MAC. Added an `MNV_ACT_BYTES(n)` helper and switched all byte-oriented
+  vector operations to it. (This originally mattered for Q15, whose 2-byte
+  activations it protected; Q15 was later removed — H5 — but the helper is kept,
+  correct and forward-compatible for any future multi-byte type.)
 - **CNN1D compiler path (low)** — the 1D-CNN architecture shipped in the engine
   but had no compiler, and `mnv_cnn1d.c` referenced a non-existent
   `compile_cnn1d.py`, so CNN1D models could only be hand-authored in C.
@@ -275,8 +336,9 @@ a regression test for each fix.
   scalars `input_len`, `pool_size`. Build with `-DMNV_ARCH_CNN1D -I<out>`. A
   compiler-emit test quantizes the float model independently (its own
   transpose) and checks the engine output matches — verified it catches a
-  wrong transpose and a wrong section order. The dense right-shift is a
-  heuristic (`ceil(log2(FLAT))+7`); calibration is future work.
+  wrong transpose and a wrong section order. The dense right-shift defaults to a
+  heuristic (`ceil(log2(FLAT))+7`) but is data-derived with `--calibrate` (see
+  the hardening pass, H4).
 - **Branchless clamp (low, Law II)** — `mnv_q8_clamp` was documented
   constant-time but used `if` branches; the old comment claimed the compiler
   emits `cmov`, but AVR (the primary target) has no conditional-move
@@ -323,13 +385,108 @@ in the changed code, all fixed with load-bearing regression tests:
   left the prior attestation live (not a false-accept, but inconsistent). Routed
   through the fail path. Regression `reject_clears_mac`.
 
-**Known pre-existing issue (not from this work; needs AVR hardware to fix safely):**
-the engine reads model *layer descriptors* (`layers[i].input_size`, …) directly
-rather than via `pgm_read`, while the compiler emits `mnv_layers[] PROGMEM`. On a
-real AVR that reads flash as RAM → garbage layer sizes (the weight blob itself is
-read correctly via `pgm_read_byte`). This affects the whole engine on AVR, not just
-the new topology guard. Fixing it (e.g. emitting `mnv_layers` in RAM, ~30 B) should
-be validated on an actual AVR target.
+### AVR PROGMEM metadata fix
+
+A pre-existing correctness bug on AVR, surfaced by the red-team and fixed
+separately: the engine reads the **crypto header** (`crypto->iv`, `crypto->mac`)
+and **layer descriptors** (`layers[i].input_size`, …) with a plain dereference,
+but the compiler emitted them `PROGMEM`. On a Harvard-architecture AVR a direct
+read of a flash address returns garbage — so on real hardware the MAC comparison
+would read a garbage expected-MAC and reject **every** model at init, and layer
+sizes would be wrong. (Invisible on the host tests because a von-Neumann host has
+one address space.)
+
+Fix: emit the small metadata (crypto header ~52 B, layer descriptors ~30 B) in
+**RAM** and keep only the large encrypted-weights blob in flash (`PROGMEM`, read
+via `pgm_read_byte`). This aligns the emitted *placement* with the engine's
+*access pattern* on every target. A related instance was also fixed:
+`mnv_verify()` (re-verification) computed the weight MAC via `mnv_blake2s_verify`,
+whose plain `memcpy` of the PROGMEM blob reads garbage on AVR — it now shares the
+same chunked `pgm_read` helper as `mnv_init()`. SRAM cost on ATmega328P: ~82 B
+(budget 960 B).
+Verified on host (behavior-preserving) and by codegen inspection; **final
+sign-off still wants a run on real AVR** (no AVR toolchain in the fix
+environment). The device **key** placement remains the user's responsibility via
+`secrets.h` (per the threat model, provisioned from EEPROM/fuse).
+
+### Hardening pass
+
+A follow-on pass tightening test quality and verifiability.
+
+- **Test `CHECK` macro double-evaluation (H1).** The `CHECK(cond, msg)` macro in
+  the host tests evaluated `cond` twice (once for the PASS/FAIL print, once for
+  the failure count). Any test that passed a *side-effecting* call as the
+  condition — e.g. `CHECK(mnv_run(...) == MNV_OK, …)` — therefore ran the
+  inference **twice** (25 such sites). Harmless where only the return was
+  checked, but it silently double-incremented the inference counter, which is
+  exactly what made a counter assertion look like a compiler "heisenbug" during
+  the Item-9 work. Root-caused (not a miscompile — the macro), and fixed: `CHECK`
+  and `test_host.c`'s `ASSERT_EQ`/`ASSERT_NEQ` now evaluate each operand once.
+- **Constant-time assurance (H2).** Two additions turn Law II's timing claim from
+  asserted to (partly) *tested*:
+  - `tests/host/test_ct_timing.c` — a dudect-style Welch's t-test that measures
+    whether `mnv_ct_compare`'s execution time depends on the data, against a
+    deliberately leaky early-exit reference. It is **self-validating**: the leaky
+    reference must show a large t-statistic (proving the harness detects a leak
+    on this machine) or the test skips; `mnv_ct_compare` must then show `|t|`
+    far below the leaky reference and below the dudect 4.5 threshold. Observed
+    `|t|`: leaky ≈ 260–1800, `mnv_ct_compare` ≈ 0.4–1.6.
+  - `tests/host/check_ct_branches.sh` — a branch audit for the straight-line CT
+    helpers. Note: a **host** audit is *vacuous* — clang canonicalizes both the
+    branchless mask idiom and a plain `if` into a conditional-select (`csel`),
+    so host disassembly can't distinguish them. The audit is therefore
+    **avr-gcc-only** (AVR has no conditional-move, so `if` becomes a real
+    branch); it skips cleanly without the AVR toolchain.
+
+  **Scope, honestly:** the timing test covers only the *early-exit* class of
+  leak, on host, for the compare. It says nothing about **power/EM** leakage
+  (e.g. the activation-LUT address channel) — that is invisible to a host and
+  needs an oscilloscope. See [Verification status](#verification-status).
+- **AVR access-pattern lock (H3).** Two host locks + one on-target scaffold guard
+  the AVR PROGMEM metadata fix against regression:
+  - `tests/host/test_progmem_split.c` — recreates the Harvard flash/RAM split on
+    the host: `encrypted_weights` points at a **poisoned** buffer and a shim
+    redirects `pgm_read_byte` to the real bytes, so a correct engine (blob read
+    only via `pgm_read`) succeeds while any *direct* blob read hits the poison
+    and the MAC fails. Verified it catches a reverted (direct-read) engine.
+  - `tests/host/check_progmem_placement.sh` — compiles a model for `atmega328p`
+    and asserts the compiler emits the crypto header and layer descriptors in
+    **RAM** and the weight blob in **flash** (`PROGMEM`).
+  - `examples/atmega328p_selftest/` — a self-contained on-target self-test
+    (builds a model in RAM, runs `init`/`run`/`verify` vs a reference, signals
+    PASS/FAIL on D13 and `selftest_result`). **Untested in the fix environment**
+    (no avr-gcc); its C logic host-compiles clean. Run it (or the classify
+    example) on real AVR / simavr for the hardware sign-off.
+- **CNN1D calibration + accuracy measurement (H4).** The dense right-shift was a
+  fixed `ceil(log2(FLAT))+7` heuristic that ignores the actual weight/activation
+  magnitudes — it can over-shift and collapse every output toward zero. Added
+  `--calibrate` for CNN1D: it runs calibration data through the quantized
+  conv→relu→pool→dense forward and picks the shift so the 99.5th-percentile
+  dense accumulator uses the int8 range without saturating.
+  `tests/host/test_cnn_accuracy.sh` then *measures* fidelity — argmax agreement
+  between the Q8 engine and the float model on a held-out set. On a random
+  4-class model the heuristic scores ~3.5% (near-random, outputs saturated) and
+  the calibrated shift ~59.5%; a trained model scores higher (this measures
+  quantization fidelity, and the point is calibration ≫ heuristic). Bias PTQ for
+  the conv/dense layers remains future work.
+- **Q15 removed (H5).** Q15 (16-bit) was advertised but never functional: the
+  fixed-point core narrows to int8 (`(int8_t)weights[i]`, `>>7`, clamp to
+  `[-128,127]`), the int32 accumulator overflows for N≥3 sixteen-bit terms, and
+  sigmoid/tanh would need a 65536-entry int16 LUT (infeasible on an MCU). A
+  correct Q15 path is a second precision engine that cannot support the LUT
+  activations, and generalizing the core would risk the tested Q8 path. So Q15
+  was **removed** rather than shipped broken or half-finished: the type block and
+  config option are gone, and selecting `MNV_QUANT_Q15` now fails with a clear
+  `#error`. Supported quantizations are **Q8, Q4, and binary**. (The
+  `MNV_ACT_BYTES` byte-length machinery it motivated is retained — correct and
+  forward-compatible.)
+- **Documentation honesty (H6).** Added the [Verification Status](#verification-status)
+  section stating plainly what is host-verified, what is construction-only, and
+  what needs hardware/a lab; softened "military-grade" to "designed for";
+  grounded the Three Laws; flagged the historical ATmega numbers as
+  re-measure-on-hardware; and reworked the threat-model guarantees table from
+  bare ✓ marks to a "verified how" column (power/EM and fault-injection are
+  marked *goal only / not measured*).
 
 ---
 
@@ -357,6 +514,11 @@ h0 = np.maximum(0, np.clip(
 ---
 
 ## Stress Test Results (simavr, ATmega328P @ 16 MHz)
+
+> ⚠️ **Historical — re-measure on hardware.** These figures predate the AVR
+> PROGMEM metadata fix and could not have come from the current code path as
+> written (the crypto-header/descriptor reads were broken on AVR). Kept for
+> context only. See [Verification Status](#verification-status).
 
 Model: 8->16->8->4 MLP, Q8, 4-class sensor classification, 99.2% float accuracy.
 
