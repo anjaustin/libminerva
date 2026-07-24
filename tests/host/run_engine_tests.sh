@@ -207,6 +207,16 @@ if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_INPUT_MIN=-100 -DMNV_INPUT_MAX=100 $INC 
 elif ! "$TMP/input_bounds"; then rc=1; fi
 echo
 
+# Anti-glitch canary layout lock (R1): canaries must bracket the sensitive
+# buffers. Only needs mnv_ct.c (canary plant/check) + the ctx struct.
+echo "=== canary_layout ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP $INC \
+        "$ROOT/tests/host/test_canary_layout.c" "$ROOT/src/security/mnv_ct.c" \
+        -o "$TMP/canary_layout" 2>"$TMP/cl.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/cl.berr"; rc=1
+elif ! "$TMP/canary_layout"; then rc=1; fi
+echo
+
 # Compiler-emit smoke tests — run the real minerva_compile.py end to end and
 # compile + check its emitted weights.c against a Python reference (MLP and
 # CNN1D paths). Skip cleanly if python3/numpy are unavailable.

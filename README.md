@@ -688,10 +688,14 @@ Flash (read-protected)
          | mnv_run():  decrypt one layer at a time
 
 SRAM (volatile)
-+-------------------------------------------------------+
-|  [canary x4] [act_buf_a] [act_buf_b] [weight_scratch] |
-|  [canary x4]   <- zeroed after each layer             |
-+-------------------------------------------------------+
+   [canary_pre  x4]   <-- leading sentinel
+ +-------------------------------------------------------+
+ | act_buf_a | act_buf_b | weight_scratch | run2 | cc kb |   <- scratch zeroed
+ +-------------------------------------------------------+      after each layer
+   [canary_post x4]   <-- trailing sentinel
+         | canaries BRACKET the buffers (mnv_ctx_t field order); a fault or
+         |   overrun into the region perturbs a sentinel -> MNV_ERR_GLITCH.
+         |   Checked after every layer. Session state lives OUTSIDE the bracket.
          | double-run comparison on every inference
          | blinded LUT: 256-entry scan per activation
 
