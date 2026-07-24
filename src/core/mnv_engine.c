@@ -15,6 +15,7 @@
 #include "mnv_blake2s.h"
 #include "mnv_chacha20.h"
 #include "mnv_ct.h"
+#include "mnv_kdf.h"
 #include "mnv_outauth.h"
 #include "mnv_prng.h"
 #if defined(MNV_ARCH_MLP)
@@ -29,7 +30,12 @@
 static void engine_chacha_init(mnv_chacha20_ctx_t *chacha,
                                 const mnv_model_t  *model)
 {
-    mnv_chacha20_init(chacha, model->key, model->crypto->iv, 0U);
+    /* Encrypt/decrypt with a derived subkey, never the master key directly
+     * (key domain separation — see mnv_kdf.h). */
+    uint8_t k_enc[MNV_CHACHA20_KEY_SIZE];
+    mnv_kdf_derive(model->key, MNV_KDF_LABEL_ENC, k_enc);
+    mnv_chacha20_init(chacha, k_enc, model->crypto->iv, 0U);
+    mnv_secure_zero(k_enc, sizeof(k_enc));
 }
 
 static mnv_status_t engine_forward(mnv_ctx_t          *ctx,
@@ -59,7 +65,14 @@ static mnv_status_t engine_forward(mnv_ctx_t          *ctx,
 static mnv_status_t engine_verify_weight_mac(const mnv_model_t *model)
 {
     mnv_blake2s_ctx_t bctx;
-    mnv_blake2s_init(&bctx, model->key, (uint8_t)MNV_CHACHA20_KEY_SIZE);
+    /* MAC under a derived subkey, not the master key (domain separation, and it
+     * removes the encrypt-and-MAC-with-the-same-key overlap with ChaCha20). The
+     * keyed-BLAKE2s init consumes the key into the hash state immediately, so
+     * k_mac can be wiped right after. */
+    uint8_t k_mac[MNV_CHACHA20_KEY_SIZE];
+    mnv_kdf_derive(model->key, MNV_KDF_LABEL_MAC, k_mac);
+    mnv_blake2s_init(&bctx, k_mac, (uint8_t)MNV_CHACHA20_KEY_SIZE);
+    mnv_secure_zero(k_mac, sizeof(k_mac));
 #if defined(MNV_PROGMEM_WEIGHTS)
     /* AVR: read the flash blob in 64B chunks via pgm_read_byte. */
     {

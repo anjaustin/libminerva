@@ -136,6 +136,15 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
     /* ── Dense output layer — one row at a time ── */
     uint32_t flat_bytes = (uint32_t)MNV_CNN_FLAT_SIZE * sizeof(mnv_weight_t);
 
+    /* Hold each output's shifted accumulator in the ACCUMULATOR domain (int32,
+     * not yet clamped to int8) so the dense bias can be folded in before a
+     * SINGLE clamp. The dense bias is streamed after all the weight rows, so it
+     * is not available inside this loop; the old code clamped here and added
+     * bias afterward, which lost precision — a value saturated at ±127 pre-bias
+     * could never be pulled back into range, and the shift calibration (H4)
+     * targets the pre-bias accumulator, so a large bias re-saturated the clamp. */
+    mnv_acc_t dense_pre[MNV_OUTPUT_SIZE];
+
     for (uint16_t n = 0U; n < MNV_OUTPUT_SIZE; n++) {
         mnv_chacha20_decrypt(chacha, ct + ct_off,
                              (uint8_t *)ctx->weight_scratch, flat_bytes);
@@ -143,13 +152,15 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
 
         mnv_acc_t acc = mnv_q8_dot(ctx->weight_scratch, feat_map,
                                     MNV_CNN_FLAT_SIZE);
-        /* Dense shift: ceil(log2(FLAT_SIZE)) + 7 to stay in int8 range */
-        output[n] = (mnv_act_t)mnv_q8_clamp(acc >> MNV_CNN_DENSE_SHIFT);
+        /* Dense shift: ceil(log2(FLAT_SIZE)) + 7 (or calibrated). Bias is added
+         * below, in this same domain, before the clamp. */
+        dense_pre[n] = acc >> MNV_CNN_DENSE_SHIFT;
 
         mnv_secure_zero(ctx->weight_scratch, flat_bytes);
     }
 
-    /* Decrypt and add dense biases */
+    /* Decrypt dense biases and apply them in the accumulator domain with a
+     * single clamp (see dense_pre above). */
     mnv_bias_t dense_bias[MNV_OUTPUT_SIZE];
     mnv_chacha20_decrypt(chacha, ct + ct_off,
                          (uint8_t *)dense_bias,
@@ -158,9 +169,9 @@ mnv_status_t mnv_cnn1d_forward(mnv_ctx_t          *ctx,
     (void)ct_off;   /* suppress unused warning */
 
     for (uint16_t n = 0U; n < MNV_OUTPUT_SIZE; n++)
-        output[n] = mnv_q8_clamp((mnv_acc_t)output[n] +
-                                  (mnv_acc_t)dense_bias[n]);
+        output[n] = mnv_q8_clamp(dense_pre[n] + (mnv_acc_t)(int8_t)dense_bias[n]);
 
+    mnv_secure_zero(dense_pre,  sizeof(dense_pre));
     mnv_secure_zero(dense_bias, sizeof(dense_bias));
 
     status = mnv_canary_check(ctx);

@@ -41,13 +41,18 @@ mnv_status_t mnv_canary_check(const mnv_ctx_t *ctx)
     return (diff == 0) ? MNV_OK : MNV_ERR_GLITCH;
 }
 
+/* Constant-time range check against [MNV_INPUT_MIN, MNV_INPUT_MAX]. Branchless:
+ * (v - MIN) is negative (high byte 0xFF) iff v < MIN, and (MAX - v) is negative
+ * iff v > MAX; either sets `bad`. NOTE the default bounds are the full Q range,
+ * so for Q8 this accepts every int8 (a no-op) — see MNV_INPUT_MIN/MAX in
+ * mnv_types.h for tightening it to an application-specific range. */
 mnv_status_t mnv_ct_validate_input(const mnv_act_t *input, uint16_t len)
 {
     uint8_t bad = 0;
     for (uint16_t i = 0; i < len; i++) {
         int16_t v = (int16_t)(int8_t)input[i];
-        bad |= (uint8_t)(((uint16_t)(v - (int16_t)MNV_Q_MIN)) >> 8U);
-        bad |= (uint8_t)(((uint16_t)((int16_t)MNV_Q_MAX - v)) >> 8U);
+        bad |= (uint8_t)(((uint16_t)(v - (int16_t)MNV_INPUT_MIN)) >> 8U);
+        bad |= (uint8_t)(((uint16_t)((int16_t)MNV_INPUT_MAX - v)) >> 8U);
     }
     return (bad == 0) ? MNV_OK : MNV_ERR_INPUT;
 }

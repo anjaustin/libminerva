@@ -181,6 +181,17 @@ if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_MIN_CONFIDENCE=20 $INC \
 elif ! "$TMP/confidence"; then rc=1; fi
 echo
 
+# Configurable input-range validation (F2): compile with a tightened range and
+# prove out-of-band inputs (incl. the int8 extremes the default range accepts)
+# are rejected. Only needs mnv_ct.c.
+echo "=== input_bounds ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_INPUT_MIN=-100 -DMNV_INPUT_MAX=100 $INC \
+        "$ROOT/tests/host/test_input_bounds.c" "$ROOT/src/security/mnv_ct.c" \
+        -o "$TMP/input_bounds" 2>"$TMP/ib.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/ib.berr"; rc=1
+elif ! "$TMP/input_bounds"; then rc=1; fi
+echo
+
 # Compiler-emit smoke tests — run the real minerva_compile.py end to end and
 # compile + check its emitted weights.c against a Python reference (MLP and
 # CNN1D paths). Skip cleanly if python3/numpy are unavailable.

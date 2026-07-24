@@ -34,6 +34,7 @@
 #include "minerva.h"
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
+#include "mnv_kdf.h"
 #include "mnv_ct.h"
 
 /* Small model: 8 -> 8 -> 8 -> 4, Q8 MLP. */
@@ -72,9 +73,12 @@ int main(void)
     for(int i=0;i<W1N;i++) pt[o++]=(uint8_t)W1[i]; for(int i=0;i<H1;i++) pt[o++]=(uint8_t)b1[i];
     for(int i=0;i<W2N;i++) pt[o++]=(uint8_t)W2[i]; for(int i=0;i<OUT;i++) pt[o++]=(uint8_t)b2[i];
 
-    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,key,nonce,0);
+    uint8_t k_enc[32], k_mac[32];
+    mnv_kdf_derive(key, MNV_KDF_LABEL_ENC, k_enc);   /* domain separation (mnv_kdf.h) */
+    mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
+    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,k_enc,nonce,0);
     mnv_chacha20_decrypt(&cc,pt,ct,PT_LEN);
-    mnv_blake2s_mac(key,32,ct,PT_LEN,mac);
+    mnv_blake2s_mac(k_mac,32,ct,PT_LEN,mac);
 
     mnv_crypto_header_t H;
     for(int i=0;i<12;i++) H.iv[i]=nonce[i];

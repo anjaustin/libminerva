@@ -12,6 +12,7 @@
 #include "minerva.h"
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
+#include "mnv_kdf.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -70,8 +71,8 @@ static void reference_forward(const int8_t *in, int8_t *out){
     for (int n=0;n<OUT;n++){
         int32_t acc=0;
         for (int j=0;j<FLAT;j++) acc += (int32_t)dW[n*FLAT+j]*(int32_t)feat[j];
-        int8_t v = clamp8(acc>>SHIFT);            /* engine clamps pre-bias */
-        out[n] = clamp8((int32_t)v + (int32_t)dbias[n]);
+        int32_t pre = acc>>SHIFT;                 /* accumulator domain */
+        out[n] = clamp8(pre + (int32_t)dbias[n]); /* bias folded in, single clamp */
     }
 }
 
@@ -92,9 +93,12 @@ int main(void){
     uint8_t nonce[12]={0}; nonce[1]=0x33;
     static uint8_t pt[PT_LEN], ct[PT_LEN]; uint8_t mac[32];
     serialize(pt);
-    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,key,nonce,0);
+    uint8_t k_enc[32], k_mac[32];
+    mnv_kdf_derive(key, MNV_KDF_LABEL_ENC, k_enc);   /* domain separation (mnv_kdf.h) */
+    mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
+    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,k_enc,nonce,0);
     mnv_chacha20_decrypt(&cc,pt,ct,PT_LEN);
-    mnv_blake2s_mac(key,32,ct,PT_LEN,mac);
+    mnv_blake2s_mac(k_mac,32,ct,PT_LEN,mac);
 
     mnv_crypto_header_t H; memcpy(H.iv,nonce,12); memcpy(H.mac,mac,32);
     H.weight_count=F*K+OUT*FLAT; H.bias_count=F+OUT;

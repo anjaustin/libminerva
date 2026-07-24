@@ -203,7 +203,11 @@
 #define MNV_ENABLE_INTEGRITY_CHECK      /* BLAKE2s model MAC verification        */
 #define MNV_ENABLE_CANARIES             /* SRAM canary anti-glitch detection     */
 #define MNV_ENABLE_DOUBLE_RUN           /* Redundant inference comparison        */
-#define MNV_ENABLE_INPUT_VALIDATION     /* Constant-time input range clamping    */
+#define MNV_ENABLE_INPUT_VALIDATION     /* Constant-time input range check       */
+/* Range checked by input validation is [MNV_INPUT_MIN, MNV_INPUT_MAX] (defined
+ * in mnv_types.h). It DEFAULTS to the full quantization range — for Q8 that is
+ * all of int8, so the default check is a no-op; set the two macros to the app's
+ * real sensor range to make it bite. */
 #define MNV_ENABLE_CONFIDENCE_CHECK     /* Reject low-confidence outputs         */
 #define MNV_ENABLE_CONSTANT_TIME        /* Enforce CT arithmetic throughout      */
 

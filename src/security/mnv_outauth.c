@@ -38,6 +38,7 @@
 #include "mnv_outauth.h"
 #include "mnv_blake2s.h"
 #include "mnv_ct.h"
+#include "mnv_kdf.h"
 #include <string.h>
 
 /* =========================================================================
@@ -89,10 +90,17 @@ void mnv_outauth_compute(mnv_ctx_t       *ctx,
     uint8_t auth_buf[MNV_AUTH_BUF_SIZE];
     uint8_t full_mac[MNV_BLAKE2S_DIGEST_SIZE];
 
+    /* Authenticate under a derived output subkey, not the master device key
+     * directly (domain separation — see mnv_kdf.h). The downstream verifier is
+     * handed the same master key and derives the identical subkey. */
+    uint8_t k_out[MNV_CHACHA20_KEY_SIZE];
+    mnv_kdf_derive(device_key, MNV_KDF_LABEL_OUT, k_out);
+
     build_auth_buffer(output, input, ctx->inference_counter, auth_buf);
-    mnv_blake2s_mac(device_key, (uint8_t)MNV_CHACHA20_KEY_SIZE,
+    mnv_blake2s_mac(k_out, (uint8_t)MNV_CHACHA20_KEY_SIZE,
                     auth_buf, (uint16_t)MNV_AUTH_BUF_SIZE,
                     full_mac);
+    mnv_secure_zero(k_out, sizeof(k_out));
 
     /* Truncate to MNV_OUTPUT_MAC_SIZE bytes */
     memcpy(ctx->output_mac, full_mac, MNV_OUTPUT_MAC_SIZE);
@@ -134,10 +142,15 @@ mnv_status_t mnv_outauth_verify(const mnv_ctx_t *ctx,
     /* Counter at the time of the last inference (modular; wraps with compute). */
     uint32_t last_counter = ctx->inference_counter - 1U;
 
+    /* Same derived output subkey as the compute side (see mnv_outauth_compute). */
+    uint8_t k_out[MNV_CHACHA20_KEY_SIZE];
+    mnv_kdf_derive(device_key, MNV_KDF_LABEL_OUT, k_out);
+
     build_auth_buffer(output, input, last_counter, auth_buf);
-    mnv_blake2s_mac(device_key, (uint8_t)MNV_CHACHA20_KEY_SIZE,
+    mnv_blake2s_mac(k_out, (uint8_t)MNV_CHACHA20_KEY_SIZE,
                     auth_buf, (uint16_t)MNV_AUTH_BUF_SIZE,
                     full_mac);
+    mnv_secure_zero(k_out, sizeof(k_out));
 
     /* Constant-time compare — truncated MAC only */
     uint8_t diff = mnv_ct_compare(full_mac, ctx->output_mac, MNV_OUTPUT_MAC_SIZE);

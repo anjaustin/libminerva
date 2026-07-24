@@ -32,6 +32,11 @@
 
 #if defined(MNV_ARCH_BNN)
 
+/* Fixed-point reciprocal shift for the popcount->Q8 scaling (see the neuron
+ * loop). 15 keeps acc*recip well inside int32 for every supported layer width
+ * (max |acc*recip| ≈ 127<<15 ≈ 4.16e6). */
+#define MNV_BNN_RECIP_SHIFT  15
+
 /* =========================================================================
  * BNN DOT PRODUCT — bit-addressed
  *
@@ -143,18 +148,38 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
         /* Pack input activations */
         pack_activations(src, packed_src, in_sz);
 
+        /* Popcount->Q8 scaling reciprocal. The old code scaled each neuron with
+         * (acc*127)/in_sz — a runtime integer DIVISION whose dividend (acc) is a
+         * secret intermediate. That divide is variable-latency on cores with a
+         * hardware divider (Cortex-M4 SDIV) and on the host, so its timing leaks
+         * the accumulator: a Law II violation the Q8 branchless-clamp work never
+         * reached. Here the division is done ONCE per layer, over the PUBLIC
+         * layer width in_sz only (leaks nothing secret); the per-neuron path is
+         * then a data-independent multiply + arithmetic shift. */
+        uint16_t isz   = (in_sz != 0U) ? in_sz : 1U;   /* in_sz>0 guaranteed by mnv_init */
+        /* Target range is the int8 activation range [-127,127] (NOT MNV_Q_SCALE,
+         * which is 1 under MNV_QUANT_BINARY); mirrors the old literal 127. */
+        int32_t  recip = (((int32_t)127 << MNV_BNN_RECIP_SHIFT)
+                          + (int32_t)(isz >> 1)) / (int32_t)isz;   /* round(127*2^15 / in_sz) */
+
         /* For each output neuron */
         for (uint16_t n = 0; n < out_sz; n++) {
             /* Weights for neuron n start at bit n*in_sz in the packed buffer. */
             int16_t acc = bnn_dot_bits((const uint8_t *)ctx->weight_scratch,
                                        (uint32_t)n * (uint32_t)in_sz, packed_src, in_sz);
 
-            /* Scale to Q8: acc ∈ [-in_sz, +in_sz], map to [-127, +127] */
-            int16_t scaled = (int16_t)((int32_t)acc * 127 / (int16_t)in_sz);
-            scaled += (int16_t)(int8_t)bias_scratch[n];
-            mnv_act_t pre_act = (mnv_act_t)(scaled > 127 ? 127 : (scaled < -128 ? -128 : scaled));
+            /* Scale to Q8: acc ∈ [-in_sz, +in_sz] -> [-127, +127], constant-time
+             * (reciprocal multiply + shift, no data-dependent branch/divide). */
+            int32_t scaled = ((int32_t)acc * recip) >> MNV_BNN_RECIP_SHIFT;
+            scaled += (int32_t)(int8_t)bias_scratch[n];
+            /* Branchless clamp (Law II) — was a data-dependent ternary. |scaled|
+             * <= ~255 here, so the narrowing to mnv_acc_t is value-preserving. */
+            mnv_act_t pre_act = mnv_q8_clamp((mnv_acc_t)scaled);
 
-            /* BNN uses sign activation for hidden layers, linear for output */
+            /* Sign activation (hidden, branchless mask) or linear (output); the
+             * switch is on the PUBLIC layer activation, not on any secret. BNN
+             * never uses the sigmoid/tanh LUTs, so there is no LUT-vs-non-LUT
+             * timing disparity to equalize with a blinded dummy scan here. */
             dst[n] = mnv_apply_activation(ld->activation, pre_act);
         }
 

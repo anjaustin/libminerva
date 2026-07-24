@@ -103,6 +103,26 @@ MNV_STATIC_ASSERT(
 #define MNV_ACT_BYTES(n)  ((size_t)(n) * sizeof(mnv_act_t))
 
 /* =========================================================================
+ * INPUT VALIDATION RANGE
+ * Bounds enforced (constant-time) by mnv_ct_validate_input() when
+ * MNV_ENABLE_INPUT_VALIDATION is set. Defaults to the full quantization range.
+ *
+ * HONEST NOTE: for Q8 the quantization range is the ENTIRE int8 domain
+ * [-128,127], so the DEFAULT check accepts every possible input — it is a
+ * structural no-op for Q8 and only constrains Q4/binary. To get a real range
+ * gate on Q8, override these with the application's actual sensor range
+ * (e.g. -DMNV_INPUT_MIN=-100 -DMNV_INPUT_MAX=100), which rejects out-of-band
+ * inputs with MNV_ERR_INPUT before any inference runs. Defined here (not in
+ * mnv_config.h) because they depend on MNV_Q_MIN/MNV_Q_MAX above; a -D override
+ * or an earlier #define still wins via the #ifndef guards. */
+#ifndef MNV_INPUT_MIN
+#define MNV_INPUT_MIN   MNV_Q_MIN
+#endif
+#ifndef MNV_INPUT_MAX
+#define MNV_INPUT_MAX   MNV_Q_MAX
+#endif
+
+/* =========================================================================
  * STATUS CODES
  * Every public function returns mnv_status_t.
  * On any non-OK status the engine zeroes its SRAM buffers immediately.

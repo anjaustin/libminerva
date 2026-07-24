@@ -20,6 +20,7 @@
 #include "minerva.h"
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
+#include "mnv_kdf.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -55,9 +56,12 @@ int main(void)
     memcpy(pt+o, W0, W0N); o += W0N; memcpy(pt+o, b0, H0); o += H0;
     memcpy(pt+o, W1, W1N); o += W1N; memcpy(pt+o, b1, H1); o += H1;
     memcpy(pt+o, W2, W2N); o += W2N; memcpy(pt+o, b2, OUT);
-    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc, key, nonce, 0);
+    uint8_t k_enc[32], k_mac[32];
+    mnv_kdf_derive(key, MNV_KDF_LABEL_ENC, k_enc);   /* domain separation (mnv_kdf.h) */
+    mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
+    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc, k_enc, nonce, 0);
     mnv_chacha20_decrypt(&cc, pt, ct, PT_LEN);
-    mnv_blake2s_mac(key, 32, ct, PT_LEN, mac);
+    mnv_blake2s_mac(k_mac, 32, ct, PT_LEN, mac);
     mnv_crypto_header_t H; memcpy(H.iv, nonce, 12); memcpy(H.mac, mac, 32);
     H.weight_count = W0N+W1N+W2N; H.bias_count = H0+H1+OUT;
     mnv_layer_desc_t L[3] = {

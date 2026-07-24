@@ -74,6 +74,8 @@ Minerva assumes an adversary with:
 
 **Mitigation:** Weights are encrypted with ChaCha20-256. The key is never stored in flash — it is provisioned into a protected memory region (EEPROM with write-lock fuse on AVR, or TrustZone secure world on ARM). Without the key, the weight blob is indistinguishable from random bytes.
 
+**Key domain separation:** the master device key is never handed to a primitive directly. Each purpose (weight encryption, weight MAC, output authentication) uses an independent 32-byte subkey derived as `BLAKE2s(key = master, message = {domain-label})` — see `src/security/mnv_kdf.h`, mirrored bit-for-bit by the compiler. This removes the encrypt-and-MAC-with-the-same-key overlap and ensures a weakness in one primitive cannot cross-contaminate another.
+
 **Residual risk:** Key extraction via side channel during decryption (see §4.3).
 
 ---
@@ -130,7 +132,7 @@ Minerva assumes an adversary with:
 
 **Mitigations:**
 
-1. **Input range validation** (constant-time): all input values are checked against `[MNV_Q_MIN, MNV_Q_MAX]`. Out-of-range inputs are rejected with `MNV_ERR_INPUT` before any inference computation begins.
+1. **Input range validation** (constant-time): all input values are checked against `[MNV_INPUT_MIN, MNV_INPUT_MAX]`. Out-of-range inputs are rejected with `MNV_ERR_INPUT` before any inference computation begins. **Honest scope:** these bounds default to the full quantization range, which for **Q8 is the entire int8 domain** — so the *default* check accepts every possible input and is a structural no-op for Q8 (it only constrains Q4/binary). To get a real gate on Q8, set the bounds to the application's actual sensor range (`-DMNV_INPUT_MIN=… -DMNV_INPUT_MAX=…`).
 
 2. **Confidence threshold**: output is rejected if the maximum logit is below `MNV_MIN_CONFIDENCE` (default: 0, i.e. disabled; set per-application). The comparison is signed, so a negative maximum logit counts as low confidence. Low-confidence outputs — which adversarial inputs often produce after Q8 quantization — are rejected with `MNV_ERR_CONFIDENCE`.
 
@@ -173,7 +175,7 @@ Minerva assumes an adversary with:
 
 ## 6. Key Management Recommendations
 
-The device key (`MNV_DEVICE_KEY`) is the root of all security. Its compromise breaks all protections.
+The device key (`MNV_DEVICE_KEY`) is the root of all security. Its compromise breaks all protections. It is used only as a *master* key: the engine and compiler derive independent per-purpose subkeys from it (see §4.1, "Key domain separation"), so no cryptographic primitive ever sees the master key directly.
 
 **ATmega:** Use the AVR EEPROM with lock bits set (fuse `BOOTRST=0`, `BLB1=0`). Disable JTAG fuse. Use a unique per-device key derived from a factory master key via HKDF.
 

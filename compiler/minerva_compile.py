@@ -38,6 +38,15 @@ def cc20_encrypt(key,nonce,pt):
 def b2s_mac(key,data):
     return hashlib.blake2s(data,key=key[:32],digest_size=32).digest()
 
+# ── Key domain separation ──────────────────────────────────────────────────────
+# The master device key is never used as a primitive key directly; each purpose
+# derives an independent 32-byte subkey. Mirrors src/security/mnv_kdf.h byte-for-
+# byte (subkey = BLAKE2s(key=master, message={label})) so the engine decrypts and
+# verifies exactly what is emitted here.
+KDF_LABEL_ENC, KDF_LABEL_MAC, KDF_LABEL_OUT = 0x01, 0x02, 0x03
+def kdf(master, label):
+    return hashlib.blake2s(bytes([label]), key=master[:32], digest_size=32).digest()
+
 # ── Quantization ──────────────────────────────────────────────────────────────
 def qw(arr):
     """Quantize weight array to Q8 int8."""
@@ -180,8 +189,8 @@ class Compiler:
             off+=wl+bl
 
         nonce=os.urandom(12)
-        ct=cc20_encrypt(self.key,nonce,plaintext)
-        mac=b2s_mac(self.key,ct)
+        ct=cc20_encrypt(kdf(self.key,KDF_LABEL_ENC),nonce,plaintext)
+        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),ct)
         return (self._emit_c(ct,nonce,mac,offsets), self._emit_h(ct,offsets),
                 self._emit_dims(), debug)
 
@@ -376,8 +385,8 @@ class CnnCompiler:
         dbq=_q8_arr(self.dense_b)         # [OUT]
         blob=kq.tobytes()+cbq.tobytes()+dwq.tobytes()+dbq.tobytes()
         nonce=os.urandom(12)
-        ct=cc20_encrypt(self.key,nonce,blob)
-        mac=b2s_mac(self.key,ct)
+        ct=cc20_encrypt(kdf(self.key,KDF_LABEL_ENC),nonce,blob)
+        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),ct)
         wcount=self.F*self.K+self.OUT*self.FLAT; bcount=self.F+self.OUT
         debug={'conv_w_q':kq.reshape(self.F,self.K),'conv_b_q':cbq,
                'denseW_T_q':dwq.reshape(self.OUT,self.FLAT),'dense_b_q':dbq,

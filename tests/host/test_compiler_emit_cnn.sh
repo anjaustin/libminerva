@@ -110,7 +110,7 @@ def fwd(x):
     out=[]
     for n in range(OUT):
         acc=sum(int(dW[n,j])*int(feat[j]) for j in range(FLAT))
-        out.append(clamp8(clamp8(acc>>SHIFT)+int(dB[n])))
+        out.append(clamp8((acc>>SHIFT)+int(dB[n])))   # bias in acc domain, single clamp
     return out
 print('\n'.join(' '.join(str(v) for v in fwd([gen_input(t,i) for i in range(IN)])) for t in range(NT)))
 PY

@@ -488,6 +488,43 @@ A follow-on pass tightening test quality and verifiability.
   bare ✓ marks to a "verified how" column (power/EM and fault-injection are
   marked *goal only / not measured*).
 
+### Local audit remediation (A1–A5)
+
+A follow-on first-hand audit of the source (not just the docs) surfaced five
+items, each remediated with a regression test where testable:
+
+- **A1 — BNN constant-time gap (Law II).** The BNN popcount→Q8 scaling used
+  `(acc*127)/in_sz`, a runtime integer **division whose dividend is a secret
+  accumulator** (variable-latency on Cortex-M4 `SDIV` and on host), followed by
+  a data-dependent **ternary clamp** — both leak, and the file even claimed
+  "branchless." The Q8 branchless-clamp work (Item 7) never reached this path.
+  Fixed: the division is now done **once per layer** over the *public* layer
+  width (`round(127·2¹⁵/in_sz)`), and each neuron uses a data-independent
+  multiply + arithmetic shift, then the branchless `mnv_q8_clamp`. The
+  reference in `test_engine_bnn.c` mirrors the new scaling bit-for-bit.
+- **A2 — input validation is a no-op for Q8.** `mnv_ct_validate_input` checked
+  `[MNV_Q_MIN, MNV_Q_MAX]`, which for Q8 is the whole int8 range — so it accepted
+  every input. It is now checked against configurable `[MNV_INPUT_MIN,
+  MNV_INPUT_MAX]` (default = the Q range, i.e. still a documented no-op for Q8;
+  override with the app's sensor range to make it bite). New `test_input_bounds`
+  proves a tightened range rejects out-of-band inputs, including the int8
+  extremes the default accepts. The docs now state the default scope honestly.
+- **A3 — key domain separation.** The master device key was used *directly* as
+  the ChaCha20 encryption key, the BLAKE2s weight-MAC key, **and** the output-auth
+  key. It is now only a master: each purpose derives an independent subkey via
+  `BLAKE2s(key=master, {label})` (`src/security/mnv_kdf.h`), mirrored bit-for-bit
+  by the compiler. Removes the encrypt-and-MAC-with-the-same-key overlap. The
+  public API is unchanged (callers still pass the master key; derivation is
+  internal).
+- **A4 — CNN1D dense bias added post-clamp.** The dense layer clamped the shifted
+  accumulator to int8 **before** adding the bias, so a saturated value could
+  never be pulled back and the shift calibration (H4) targeted the pre-bias
+  accumulator. Bias is now folded into the accumulator domain with a **single**
+  clamp; both CNN references (engine test + compiler-emit) updated to match.
+- **A5 — repo hygiene.** A 370 KB untracked session transcript was in the working
+  tree, unmatched by `.gitignore` (one `git add .` from being committed). Added a
+  pattern for timestamped session dumps.
+
 ---
 
 ## Python Validation Note

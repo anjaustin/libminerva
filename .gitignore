@@ -29,6 +29,12 @@ __pycache__/
 # ── OS ──────────────────────────────────────────────────────────────────────
 .DS_Store
 
+# ── Claude Code / tooling session transcripts ───────────────────────────────
+# Timestamped session dumps (YYYY-MM-DD-HHMMSS-*.txt) may embed conversation
+# history, emails, or keys. Never commit them; keep them out of the working
+# tree's staging surface. Delete the local copies when you no longer need them.
+/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.txt
+
 # AVR example build artifacts
 *.elf
 *.hex

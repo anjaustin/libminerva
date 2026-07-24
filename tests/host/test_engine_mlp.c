@@ -20,6 +20,7 @@
 #include "minerva.h"
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
+#include "mnv_kdf.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -101,9 +102,14 @@ int main(void) {
 
     static uint8_t pt[PT_LEN], ct[PT_LEN]; uint8_t mac[32];
     serialize(pt);
-    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc, key, nonce, 0);
+    /* Build the blob with the derived subkeys (the engine derives the same from
+     * the master key it is handed in M below — key domain separation, mnv_kdf.h). */
+    uint8_t k_enc[32], k_mac[32];
+    mnv_kdf_derive(key, MNV_KDF_LABEL_ENC, k_enc);
+    mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
+    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc, k_enc, nonce, 0);
     mnv_chacha20_decrypt(&cc, pt, ct, PT_LEN);              /* XOR == encrypt */
-    mnv_blake2s_mac(key, 32, ct, PT_LEN, mac);
+    mnv_blake2s_mac(k_mac, 32, ct, PT_LEN, mac);
 
     mnv_crypto_header_t H; memcpy(H.iv, nonce, 12); memcpy(H.mac, mac, 32);
     H.weight_count = W0N+W1N+W2N; H.bias_count = H0+H1+OUT;

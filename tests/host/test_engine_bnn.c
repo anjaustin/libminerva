@@ -13,6 +13,7 @@
 #include "minerva.h"
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
+#include "mnv_kdf.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -59,11 +60,17 @@ static void pack_w(uint8_t *dst, const int8_t *w, int in_sz, int out_sz){
     }
 }
 
-/* reference: a_val = sign(src), acc=sum w_val*a_val, scaled=acc*127/in, +bias */
+/* reference: a_val = sign(src), acc=sum w_val*a_val, then the engine's
+ * constant-time popcount->Q8 scaling: a per-layer reciprocal (from the public
+ * in_sz) multiplied per neuron, +bias, single clamp. Mirrors mnv_bnn.c
+ * bit-for-bit (round(127*2^15/in_sz) reciprocal, >>15). */
+#define REF_BNN_RECIP_SHIFT 15
 static int8_t ref_neuron(const int8_t *w, const int8_t *src, int in_sz, int8_t bias){
     int32_t acc=0;
     for(int i=0;i<in_sz;i++){ int a = src[i]>=0?1:-1; acc += (int)w[i]*a; }
-    int32_t scaled = acc*127/in_sz;
+    int isz = in_sz ? in_sz : 1;
+    int32_t recip = (((int32_t)127 << REF_BNN_RECIP_SHIFT) + (isz>>1)) / isz;
+    int32_t scaled = ((int32_t)acc * recip) >> REF_BNN_RECIP_SHIFT;
     return clamp8(scaled + (int32_t)bias);
 }
 static int8_t act_sign(int8_t x){ return x>=0?127:-128; }
@@ -90,9 +97,12 @@ int main(void){
     uint8_t nonce[12]={0}; nonce[2]=0x77;
     static uint8_t pt[PT_LEN], ct[PT_LEN]; uint8_t mac[32];
     serialize(pt);
-    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,key,nonce,0);
+    uint8_t k_enc[32], k_mac[32];
+    mnv_kdf_derive(key, MNV_KDF_LABEL_ENC, k_enc);   /* domain separation (mnv_kdf.h) */
+    mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
+    mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,k_enc,nonce,0);
     mnv_chacha20_decrypt(&cc,pt,ct,PT_LEN);
-    mnv_blake2s_mac(key,32,ct,PT_LEN,mac);
+    mnv_blake2s_mac(k_mac,32,ct,PT_LEN,mac);
 
     mnv_crypto_header_t H; memcpy(H.iv,nonce,12); memcpy(H.mac,mac,32);
     H.weight_count=L0W+L1W+L2W; H.bias_count=H0+H1+OUT;
