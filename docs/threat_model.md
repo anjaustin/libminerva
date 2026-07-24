@@ -131,7 +131,10 @@ not a public constant — so an attacker who does not hold the key cannot predic
 the mask stream (previously the fixed default made every mask public, nullifying
 the blinding). Seeding with hardware entropy via `mnv_seed_prng()` after
 `mnv_init()` is still recommended: a static seed repeats the same mask sequence
-across power cycles, which trace averaging can strip.
+across power cycles, which trace averaging can strip. The derived default is also
+only as unique as the device key — devices sharing a factory master key share the
+same default mask stream, so the per-device key recommendation in §6 applies to
+the blinding as well.
 
 **Residual risk (v1.0):** DPA against activation LUT accesses is theoretically possible with many traces. The attack complexity is high but not infeasible for a well-resourced adversary. See v1.1 roadmap.
 
@@ -143,9 +146,9 @@ across power cycles, which trace averaging can strip.
 
 **Mitigations:**
 
-1. **SRAM canaries**: `uint32_t` sentinel values are planted at known locations before inference and checked after every layer. A fault that corrupts SRAM (common with voltage glitching) will corrupt canaries and trigger `MNV_ERR_GLITCH`.
+1. **SRAM canaries**: `uint32_t` sentinel values **bracket** the sensitive buffer region (`canary_pre` before it, `canary_post` after — see the `mnv_ctx_t` field order, locked by `tests/host/test_canary_layout.c`) and are checked after every layer. A fault or overrun that corrupts SRAM in or around the buffers (common with voltage glitching) perturbs a canary and triggers `MNV_ERR_GLITCH`. (Through the B-series both canary arrays sat together after the struct, bracketing nothing; that is fixed.)
 
-2. **Double-run comparison**: inference is executed twice with independent ChaCha20 counter streams. Results are compared using constant-time compare. A single-event fault that alters the computation of one run is detected.
+2. **Double-run comparison**: inference is executed twice and the two outputs are compared in constant time. **Honest scope:** both runs decrypt the *same* weights with the *same* key, IV, and counter (0) — they are **identical recomputations, not independent streams** (they cannot be independent: both must reproduce the same plaintext weights). The check therefore detects a **transient** single-event fault that perturbs exactly one run. A *permanent* fault (a stuck bit, or one reproduced identically in both runs) is **not** caught here — canaries (spatial corruption) and MAC re-verification (`mnv_verify`) cover other fault classes, and a hardware secure element covers the rest.
 
 3. **Constant-time MAC comparison**: `mnv_ct_compare()` uses bitwise OR accumulation — a fault that skips one comparison byte cannot cause a false positive.
 

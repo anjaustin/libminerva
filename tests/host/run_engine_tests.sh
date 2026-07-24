@@ -64,6 +64,13 @@ run_cfg metadata_auth test_metadata_auth.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=16 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# Fuzz mnv_init (R4): single-field mutations of a genuine model — must never
+# crash (ASan/UBSan) and never accept a tampered model. 100k iters under CI.
+run_cfg fuzz_init test_fuzz_init.c "$ROOT/src/arch/mnv_mlp.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DFUZZ_ITERS=100000 \
+    -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=16 -DMNV_LAYER_1_SIZE=8 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
+
 # CNN1D
 run_cfg cnn1d test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_CNN1D \
@@ -207,12 +214,25 @@ if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_INPUT_MIN=-100 -DMNV_INPUT_MAX=100 $INC 
 elif ! "$TMP/input_bounds"; then rc=1; fi
 echo
 
+# Anti-glitch canary layout lock (R1): canaries must bracket the sensitive
+# buffers. Only needs mnv_ct.c (canary plant/check) + the ctx struct.
+echo "=== canary_layout ==="
+if ! $CC $FLAGS -DMNV_TARGET_HOST -DMNV_ARCH_MLP $INC \
+        "$ROOT/tests/host/test_canary_layout.c" "$ROOT/src/security/mnv_ct.c" \
+        -o "$TMP/canary_layout" 2>"$TMP/cl.berr"; then
+    echo "  BUILD FAILED"; cat "$TMP/cl.berr"; rc=1
+elif ! "$TMP/canary_layout"; then rc=1; fi
+echo
+
 # Compiler-emit smoke tests — run the real minerva_compile.py end to end and
 # compile + check its emitted weights.c against a Python reference (MLP and
 # CNN1D paths). Skip cleanly if python3/numpy are unavailable.
 if ! bash "$ROOT/tests/host/test_compiler_emit.sh";     then rc=1; fi
 echo
 if ! bash "$ROOT/tests/host/test_compiler_emit_cnn.sh"; then rc=1; fi
+echo
+# S-parity across random topologies (R5): engine vs compiler structural preamble.
+if ! bash "$ROOT/tests/host/test_sparity_fuzz.sh"; then rc=1; fi
 echo
 # CNN1D quantization accuracy: calibrated dense shift vs heuristic (H4).
 if ! bash "$ROOT/tests/host/test_cnn_accuracy.sh"; then rc=1; fi

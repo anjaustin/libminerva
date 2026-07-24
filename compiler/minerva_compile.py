@@ -52,10 +52,11 @@ def kdf(master, label):
 # model STRUCTURE. Mirrors src/security/mnv_struct_auth.h byte-for-byte so a
 # post-compile edit of any layer size/activation/num_layers (or a CNN dim) is
 # detected by the engine's MAC. See that header for the full rationale.
-ABI_VERSION = 0x02                                    # == MNV_ABI_VERSION
+ABI_VERSION = 0x03                                    # == MNV_ABI_VERSION (S = struct|iv|counts)
 ARCH_MLP, ARCH_CNN1D, ARCH_BNN = 1, 2, 3
 ACT_ID = {'relu':0,'sigmoid':1,'tanh':2,'linear':3,'sign':4}
 def _le16(v): return bytes([v & 0xFF, (v >> 8) & 0xFF])
+def _le32(v): return bytes([v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF])
 def struct_preamble(arch_id, num_layers, layers=None, cnn=None):
     """S = u8 version | u8 arch_id | u8 num_layers |
            (MLP/BNN)  per layer: LE16 in, LE16 out, u8 act
@@ -214,9 +215,12 @@ class Compiler:
         nonce=os.urandom(12)
         ct=cc20_encrypt(kdf(self.key,KDF_LABEL_ENC),nonce,plaintext)
         # MAC over S || ciphertext. arch_id: binary quant => BNN engine, else MLP.
-        # S ends with the nonce (IV) so a swapped IV is detected (see mnv_struct_auth.h).
+        # S = structure || nonce(IV) || weight_count || bias_count — mirrors
+        # mnv_struct_auth.h exactly (same values emitted into the crypto header).
         arch_id=ARCH_BNN if self.quant=='binary' else ARCH_MLP
-        S=struct_preamble(arch_id,len(self.model.layers),layers=self.model.layers)+nonce
+        wcount=sum(o[1] for o in offsets); bcount=sum(o[2] for o in offsets)
+        S=(struct_preamble(arch_id,len(self.model.layers),layers=self.model.layers)
+           +nonce+_le32(wcount)+_le32(bcount))
         mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),S+ct)
         return (self._emit_c(ct,nonce,mac,offsets), self._emit_h(ct,offsets),
                 self._emit_dims(), debug)
@@ -415,10 +419,11 @@ class CnnCompiler:
         ct=cc20_encrypt(kdf(self.key,KDF_LABEL_ENC),nonce,blob)
         # MAC over S || ciphertext. CNN1D uses num_layers=0 and binds its core
         # dims (input_len, out, kernel, filters, pool) — mirrors mnv_struct_auth.h.
-        # S ends with the nonce (IV) so a swapped IV is detected.
-        S=struct_preamble(ARCH_CNN1D,0,cnn=(self.input_len,self.OUT,self.K,self.F,self.pool))+nonce
-        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),S+ct)
+        # S = structure || nonce(IV) || weight_count || bias_count.
         wcount=self.F*self.K+self.OUT*self.FLAT; bcount=self.F+self.OUT
+        S=(struct_preamble(ARCH_CNN1D,0,cnn=(self.input_len,self.OUT,self.K,self.F,self.pool))
+           +nonce+_le32(wcount)+_le32(bcount))
+        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),S+ct)
         debug={'conv_w_q':kq.reshape(self.F,self.K),'conv_b_q':cbq,
                'denseW_T_q':dwq.reshape(self.OUT,self.FLAT),'dense_b_q':dbq,
                'meta':np.array([self.input_len,self.OUT,self.K,self.F,self.pool,

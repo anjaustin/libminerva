@@ -195,8 +195,10 @@ typedef struct {
     uint8_t  iv[MNV_CHACHA20_IV_SIZE];      /* ChaCha20 nonce             */
     uint8_t  mac[MNV_BLAKE2S_DIGEST_SIZE];  /* BLAKE2s over ciphertext    */
                                             /* (encrypt-then-MAC)         */
-    uint32_t weight_count;                  /* number of weights         */
-    uint32_t bias_count;                    /* number of biases          */
+    uint32_t weight_count;                  /* informational; not consumed by   */
+    uint32_t bias_count;                    /* the engine, but bound into the   */
+                                            /* MAC (S) so no header field is    */
+                                            /* left unauthenticated (R3).       */
 } mnv_crypto_header_t;
 
 /* =========================================================================
@@ -217,13 +219,17 @@ typedef struct {
                                             /* enforced at mnv_init())            */
 } mnv_model_t;
 
-/* ABI/blob-format version. Bumped 0x01 -> 0x02 when the integrity MAC was
- * extended to cover the model's structural preamble (num_layers, per-layer
- * sizes/activation, or CNN core dims) in addition to the ciphertext — see
- * src/security/mnv_struct_auth.h. A pre-0x02 blob is rejected at the version
- * check in mnv_init(); even if it weren't, its MAC (ciphertext only) would no
- * longer match the new S||ciphertext computation. */
-#define MNV_ABI_VERSION  0x02U
+/* ABI/blob-format version — identifies the exact authenticated-preamble (S)
+ * layout the MAC covers (see src/security/mnv_struct_auth.h).
+ *   0x01: ciphertext only.
+ *   0x02: + structural preamble (num_layers, per-layer sizes/activation, CNN
+ *         core dims).
+ *   0x03: + ChaCha20 IV and the crypto-header counts, so NO descriptor field is
+ *         left unauthenticated. (current)
+ * A blob built for an older layout is rejected at the version check in
+ * mnv_init(); even without that, its MAC would no longer match the current
+ * S||ciphertext computation. Bump this whenever S's byte layout changes. */
+#define MNV_ABI_VERSION  0x03U
 
 /* =========================================================================
  * INFERENCE CONTEXT
@@ -232,6 +238,17 @@ typedef struct {
  * ========================================================================= */
 
 typedef struct {
+    /* Leading anti-glitch canary. Placed immediately BEFORE the sensitive buffer
+     * region (activation ping-pong, weight scratch, double-run buffer, ChaCha
+     * keystream) so that canary_pre + canary_post BRACKET those buffers. A fault
+     * or overrun that walks into (or just before) the region perturbs a canary,
+     * which mnv_canary_check() catches. Earlier both canary arrays sat together
+     * AFTER the whole struct, bracketing nothing — a localized upset of buf_a/
+     * buf_b/weight_scratch could pass the check. Keep canary_pre first and
+     * canary_post immediately after chacha_counter; the layout is locked by
+     * tests/host/test_canary_layout.c. */
+    uint32_t    canary_pre[MNV_CANARY_COUNT];
+
     /* Activation buffers. For MLP: sized to widest layer (MNV_LAYER_0_SIZE).
      * For CNN1D: buf_a holds the flattened feature map (MNV_CNN_FLAT_SIZE).
      * MNV_CTX_BUF_SIZE is the maximum of the two. */
@@ -276,8 +293,10 @@ typedef struct {
     uint8_t     chacha_block[64];
     uint32_t    chacha_counter;
 
-    /* Canary sentinels — checked after every layer */
-    uint32_t    canary_pre[MNV_CANARY_COUNT];
+    /* Trailing anti-glitch canary — closes the bracket opened by canary_pre at
+     * the top of the struct. A forward overrun past the last sensitive buffer
+     * lands here. Everything below is non-sensitive session state, deliberately
+     * OUTSIDE the bracketed region. */
     uint32_t    canary_post[MNV_CANARY_COUNT];
 
     /* v1.1: Output authentication MAC (appended after inference) */

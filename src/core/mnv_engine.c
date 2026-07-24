@@ -133,6 +133,14 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
      * the serializer past that buffer (and dereference the NULL layers array).
      * Genuine models satisfy this (CNN1D: 0; MLP/BNN: their real count). */
     if (model->num_layers > MNV_NUM_LAYERS)  return MNV_ERR_CONFIG;
+    /* Bound the MAC read length. encrypted_len is attacker-tamperable and drives
+     * the BLAKE2s read over the blob; a genuine blob never exceeds the configured
+     * flash weight budget. Without this a tampered length walks the hash past the
+     * blob — on MCU flash that is a wrong-MAC -> TAMPER at worst, but on a
+     * flat-memory host it is a real out-of-bounds read. Reject up front. */
+    if (model->encrypted_len == 0U ||
+        model->encrypted_len > (uint32_t)MNV_MAX_WEIGHT_BYTES)
+                                             return MNV_ERR_CONFIG;
 #if defined(MNV_PROGMEM_WEIGHTS)
     /* AVR reads flash weights through 16-bit near pointers (pgm_read_byte), so
      * the encrypted blob must live in the low 64 KB of flash. Larger models on
