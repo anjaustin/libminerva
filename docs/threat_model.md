@@ -198,7 +198,8 @@ the blinding as well.
 | Tamper detection (flash) | Host-tested | init + `mnv_verify` tests | MAC at init and on demand |
 | Fault-injection **detection** | Design intent | logic runs on host | canaries + double-run; **resistance not lab-tested** |
 | Constant-time arithmetic (timing) | Host-tested | dudect timing test (compare) | branchless by construction elsewhere |
-| Constant-time on AVR (no cmov) | Construction | avr-gcc branch audit (not run here) | host audit is vacuous |
+| Constant-time on AVR (no cmov) | Tested (codegen) | avr-gcc branch audit **passes** (0 conditional branches) | necessary, not sufficient; timing/power unmeasured |
+| Engine correctness on AVR | Tested (simavr) | PROGMEM + RAM firmware output == host oracle | cycle-accurate simulation, not physical silicon |
 | Cache-timing resistance | Design intent | — | ChaCha20 (no S-box) |
 | Power / EM resistance | **Goal only** | **not measured** | blinded LUT etc.; needs an oscilloscope/DPA |
 | Adversarial input detection | Partial | range + confidence tests | inference-time only |

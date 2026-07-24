@@ -237,6 +237,10 @@ echo
 # CNN1D quantization accuracy: calibrated dense shift vs heuristic (H4).
 if ! bash "$ROOT/tests/host/test_cnn_accuracy.sh"; then rc=1; fi
 echo
+# On-target (simulated) AVR validation via simavr — exercises the real PROGMEM
+# flash/RAM Harvard path. Skips cleanly without avr-gcc + simavr + libelf.
+if ! bash "$ROOT/tests/host/test_avr_sim.sh"; then rc=1; fi
+echo
 
 if [ "$rc" -eq 0 ]; then echo "ALL ENGINE CONFIGS PASSED"; else echo "ENGINE TESTS FAILED"; fi
 exit $rc

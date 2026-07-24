@@ -181,14 +181,28 @@ the level stated here.
   proves the weight blob is read only via `pgm_read`) plus a codegen placement
   check (metadata in RAM, blob in flash).
 
+**Verified under simavr** (cycle-accurate ATmega328P; `tests/host/test_avr_sim.sh`,
+skips without the AVR toolchain):
+- The engine **runs correctly on a simulated AVR**: the compiler-emitted
+  **PROGMEM** weight path produces output **bit-identical to the host engine**,
+  and the RAM-blob on-target self-test passes. This actually executes the Harvard
+  path host tests can't reach — `pgm_read` of the flash weight blob, the
+  descriptor/crypto-header **RAM** reads (the metadata fix), ChaCha20/BLAKE2s, the
+  R-series `mnv_init` guards, and the blinded-LUT `pgm_read` — on real avr-gcc
+  codegen (validated on avr-gcc 9 and 12). *Caveat: this is cycle-accurate
+  simulation, not physical silicon.*
+
+- Constant-time codegen on **AVR** (which has no conditional-move): the
+  `avr-gcc` branch audit (`check_ct_branches.sh`) now **passes** — `mnv_q8_mul`,
+  `mnv_q8_add_bias_clamp`, `mnv_act_relu`, and `mnv_act_sign` each compile to
+  **zero conditional branches** on avr-gcc 12 (a host audit is vacuous: clang
+  emits `csel` for both branchless and branchy source). This confirms *no
+  data-dependent branch*; it is necessary but not sufficient for constant-time —
+  cycle-level timing and power/EM remain unmeasured (below).
+
 **Correct by construction / inspection — NOT measured on the target:**
-- Constant-time execution on **AVR** (which has no conditional-move): checkable
-  by an `avr-gcc` branch audit *when that toolchain is present*; a host audit is
-  vacuous (clang emits `csel` for both branchless and branchy source), so it was
-  not verified in this environment.
-- The AVR **PROGMEM metadata fix**: correct by codegen inspection + host
-  simulation, but **not run on real AVR** (no toolchain here). An untested
-  on-target self-test (`examples/atmega328p_selftest/`) is provided for sign-off.
+- The remaining CT helpers not covered by the branch audit are branchless by the
+  same mask-select idiom, verified by inspection.
 
 **NOT verifiable without hardware / a lab — treat as design goals:**
 - **Power / EM side-channel resistance** — the heart of Law II. The blinded LUT,
@@ -199,10 +213,12 @@ the level stated here.
 - **Fault-injection resistance** (voltage/clock/EM glitching) — the canary +
   double-run + watchdog mechanisms are implemented and their *logic* runs on
   host, but they have not been validated against a real glitcher.
-- **On-target footprint and timing** — the ATmega figures in this README predate
-  the AVR fix and could not have come from the current code path as written (the
-  metadata reads were broken on AVR). Re-measure on real hardware before
-  trusting them.
+- **On-target timing / power** — not measured. Footprint is now measurable from
+  the AVR builds (`avr-size`): the current code builds to roughly **14–15 KB
+  flash** on an ATmega328P (e.g. ~14.1 KB for the 8→16→8→4 demo with PROGMEM
+  weights, ~15.0 KB for the RAM-blob self-test), well within the 32 KB budget —
+  but *inference timing* still needs a real device or a cycle count from simavr,
+  and is not asserted here.
 
 If you are deploying this where the adversary model in `docs/threat_model.md`
 actually holds, the power/EM and fault-injection properties need a hardware
@@ -641,6 +657,32 @@ is bumped **0x02 → 0x03**.
 - **R6 — BNN structural-tamper coverage.** Extended the metadata-tamper battery
   (activation / interior-width / `num_layers` / IV / count) to the BNN path, which
   previously had only a ciphertext-flip check.
+
+### On-target (simulated AVR) validation
+
+The AVR code path — the one host tests structurally cannot reach — is now
+executed on a **cycle-accurate ATmega328P under simavr** (`tests/host/test_avr_sim.sh`,
+skips without the toolchain).
+
+- **Found a real defect by running it.** The on-target self-test
+  (`examples/atmega328p_selftest`) built its encrypted blob in RAM but the AVR
+  target forces `MNV_PROGMEM_WEIGHTS`, so the engine `pgm_read`-ed a RAM address
+  (garbage on a Harvard AVR) → the self-test returned **FAIL** under simavr.
+  Fixed with a new `MNV_NO_PROGMEM_WEIGHTS` config opt-out (the self-test reads
+  its RAM blob directly; the activation LUTs stay in PROGMEM); it now **PASSES**.
+- **PROGMEM path validated end-to-end.** A compiler-emitted model with weights in
+  flash runs on simulated AVR and produces output **bit-identical to the host
+  engine** — exercising `pgm_read` of the flash blob, the descriptor/crypto-header
+  RAM reads, ChaCha20/BLAKE2s, the R-series `mnv_init` guards, and the blinded-LUT
+  `pgm_read`. Validated on avr-gcc 9 and 12.
+- **Constant-time branch audit now runs.** With a real `avr-gcc`,
+  `check_ct_branches.sh` confirms the CT helpers compile to **zero conditional
+  branches** on AVR.
+- **Footprint measured:** ~14.1 KB flash (8→16→8→4 demo, PROGMEM weights) to
+  ~15.0 KB (RAM-blob self-test) on the ATmega328P — within the 32 KB budget.
+
+Still open (need physical silicon / a lab): cycle-level timing, power/EM, and
+fault-injection resistance.
 
 ## Python Validation Note
 
