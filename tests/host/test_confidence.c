@@ -10,7 +10,9 @@
  * Build: see tests/host/run_engine_tests.sh.
  */
 
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "mnv_config.h"
 #include "mnv_types.h"
 #include "mnv_ct.h"

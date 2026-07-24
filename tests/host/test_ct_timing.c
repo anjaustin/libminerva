@@ -20,7 +20,9 @@
  * (e.g. the activation-LUT address channel), which a host cannot observe — that
  * needs an oscilloscope. See the README verification-status notes.
  */
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "mnv_ct.h"
 #include <stdio.h>

@@ -92,7 +92,9 @@
     #define MNV_SRAM_BYTES          (1024U * 1024U * 4U)
     #define MNV_MAX_WEIGHT_BYTES    (1024U * 1024U * 8U)
     #define MNV_MAX_SRAM_BUDGET     (1024U * 1024U * 2U)
+    #ifndef MNV_ARCH_HOST           /* may also be passed via -D (CMake) */
     #define MNV_ARCH_HOST
+    #endif
     #include <stdint.h>
     #include <stddef.h>
 

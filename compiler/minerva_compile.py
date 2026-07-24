@@ -47,6 +47,29 @@ KDF_LABEL_ENC, KDF_LABEL_MAC, KDF_LABEL_OUT = 0x01, 0x02, 0x03
 def kdf(master, label):
     return hashlib.blake2s(bytes([label]), key=master[:32], digest_size=32).digest()
 
+# ── Structural authentication ───────────────────────────────────────────────────
+# The MAC covers S || ciphertext, where S is a canonical serialization of the
+# model STRUCTURE. Mirrors src/security/mnv_struct_auth.h byte-for-byte so a
+# post-compile edit of any layer size/activation/num_layers (or a CNN dim) is
+# detected by the engine's MAC. See that header for the full rationale.
+ABI_VERSION = 0x02                                    # == MNV_ABI_VERSION
+ARCH_MLP, ARCH_CNN1D, ARCH_BNN = 1, 2, 3
+ACT_ID = {'relu':0,'sigmoid':1,'tanh':2,'linear':3,'sign':4}
+def _le16(v): return bytes([v & 0xFF, (v >> 8) & 0xFF])
+def struct_preamble(arch_id, num_layers, layers=None, cnn=None):
+    """S = u8 version | u8 arch_id | u8 num_layers |
+           (MLP/BNN)  per layer: LE16 in, LE16 out, u8 act
+           (CNN1D)    LE16 input_len, out, kernel, filters, pool"""
+    s = bytes([ABI_VERSION & 0xFF, arch_id & 0xFF, num_layers & 0xFF])
+    if num_layers > 0:
+        for L in layers:
+            s += _le16(L.in_size) + _le16(L.out_size) \
+               + bytes([ACT_ID.get(L.activation.lower(), 0)])
+    else:
+        for v in cnn:                                 # CNN1D core dims, in order
+            s += _le16(v)
+    return s
+
 # ── Quantization ──────────────────────────────────────────────────────────────
 def qw(arr):
     """Quantize weight array to Q8 int8."""
@@ -190,7 +213,10 @@ class Compiler:
 
         nonce=os.urandom(12)
         ct=cc20_encrypt(kdf(self.key,KDF_LABEL_ENC),nonce,plaintext)
-        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),ct)
+        # MAC over S || ciphertext. arch_id: binary quant => BNN engine, else MLP.
+        arch_id=ARCH_BNN if self.quant=='binary' else ARCH_MLP
+        S=struct_preamble(arch_id,len(self.model.layers),layers=self.model.layers)
+        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),S+ct)
         return (self._emit_c(ct,nonce,mac,offsets), self._emit_h(ct,offsets),
                 self._emit_dims(), debug)
 
@@ -386,7 +412,10 @@ class CnnCompiler:
         blob=kq.tobytes()+cbq.tobytes()+dwq.tobytes()+dbq.tobytes()
         nonce=os.urandom(12)
         ct=cc20_encrypt(kdf(self.key,KDF_LABEL_ENC),nonce,blob)
-        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),ct)
+        # MAC over S || ciphertext. CNN1D uses num_layers=0 and binds its core
+        # dims (input_len, out, kernel, filters, pool) — mirrors mnv_struct_auth.h.
+        S=struct_preamble(ARCH_CNN1D,0,cnn=(self.input_len,self.OUT,self.K,self.F,self.pool))
+        mac=b2s_mac(kdf(self.key,KDF_LABEL_MAC),S+ct)
         wcount=self.F*self.K+self.OUT*self.FLAT; bcount=self.F+self.OUT
         debug={'conv_w_q':kq.reshape(self.F,self.K),'conv_b_q':cbq,
                'denseW_T_q':dwq.reshape(self.OUT,self.FLAT),'dense_b_q':dbq,

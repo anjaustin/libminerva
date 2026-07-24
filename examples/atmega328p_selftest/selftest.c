@@ -35,6 +35,7 @@
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
 #include "mnv_kdf.h"
+#include "mnv_struct_auth.h"
 #include "mnv_ct.h"
 
 /* Small model: 8 -> 8 -> 8 -> 4, Q8 MLP. */
@@ -78,11 +79,9 @@ int main(void)
     mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
     mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,k_enc,nonce,0);
     mnv_chacha20_decrypt(&cc,pt,ct,PT_LEN);
-    mnv_blake2s_mac(k_mac,32,ct,PT_LEN,mac);
 
     mnv_crypto_header_t H;
     for(int i=0;i<12;i++) H.iv[i]=nonce[i];
-    for(int i=0;i<32;i++) H.mac[i]=mac[i];
     H.weight_count=W0N+W1N+W2N; H.bias_count=H0+H1+OUT;
     mnv_layer_desc_t L[3]={
         { IN,H0,MNV_ACT_RELU,  0,0 },
@@ -90,6 +89,16 @@ int main(void)
         { H1,OUT,MNV_ACT_LINEAR,0,0 },
     };
     mnv_model_t M={ MNV_ABI_VERSION, 3, L, &H, key, ct, PT_LEN };
+    /* MAC covers S(structure) || ciphertext — mirror the engine (mnv_struct_auth.h). */
+    {
+        uint8_t sbuf[MNV_STRUCT_MAX_BYTES];
+        size_t  slen = mnv_struct_serialize(&M, sbuf);
+        mnv_blake2s_ctx_t bc; mnv_blake2s_init(&bc,k_mac,32);
+        mnv_blake2s_update(&bc,sbuf,(uint32_t)slen);
+        mnv_blake2s_update(&bc,ct,PT_LEN);
+        mnv_blake2s_final(&bc,mac);
+    }
+    for(int i=0;i<32;i++) H.mac[i]=mac[i];
 
     static mnv_ctx_t ctx;
     uint8_t ok = 1;

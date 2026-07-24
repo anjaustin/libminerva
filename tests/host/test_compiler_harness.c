@@ -15,7 +15,9 @@
  * reference inside test_compiler_emit.sh.
  */
 
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "weights.h"     /* generated: mnv_model + topology macros */
 #include <stdio.h>

@@ -82,11 +82,32 @@ Minerva assumes an adversary with:
 
 ### 4.2 Model Tampering
 
-**Attack:** Adversary modifies the encrypted weight blob in flash to alter inference behavior.
+**Attack:** Adversary modifies the model to alter inference behavior — either the
+encrypted weight blob, or the model's *structure* (layer widths, activation
+functions, layer count).
 
-**Mitigation:** BLAKE2s-256 keyed MAC is computed over the entire encrypted weight blob during `mnv_init()` and on every explicit `mnv_verify()` call. Any modification to even one byte causes the MAC check to fail. On failure, the device zeroes its SRAM state and returns `MNV_ERR_TAMPER` — no inference output is produced.
+**Mitigation:** A BLAKE2s-256 keyed MAC is verified during `mnv_init()` and on
+every explicit `mnv_verify()` call. It is computed over **`S || ciphertext`**,
+where `S` is a canonical serialization of the model structure the engine will
+actually run — `version`, architecture id, `num_layers`, and each layer's
+`input_size` / `output_size` / `activation` (for CNN1D, the conv core
+dimensions). See `src/security/mnv_struct_auth.h`. Any modification to even one
+byte of the ciphertext **or** to any structural field causes the MAC check to
+fail; the device zeroes its SRAM state and returns `MNV_ERR_TAMPER`, and no
+inference output is produced.
 
-**Note:** MAC is computed over *ciphertext* (encrypt-then-MAC scheme). This prevents chosen-ciphertext attacks against the decryption layer.
+Binding the structure closes a gap present through v1.3.1: the descriptors
+(`num_layers`, sizes, activations) drive inference but lived in a mutable
+descriptor outside the ciphertext, so an attacker who could rewrite the flash
+image could, e.g., turn a nonlinearity into identity or collapse the network
+while still passing a ciphertext-only integrity check — running a structurally
+different model the device reported as "verified" (a Law I violation). The
+blob-format version was bumped (ABI `0x02`); a pre-`0x02` blob is rejected.
+
+**Note:** the MAC is computed over *ciphertext* (encrypt-then-MAC scheme). This
+prevents chosen-ciphertext attacks against the decryption layer. The structural
+preamble `S` is plaintext (structure is public topology, not a protected asset)
+but authenticated, so it cannot be altered undetected.
 
 ---
 
@@ -103,6 +124,14 @@ Minerva assumes an adversary with:
 3. **LUT-based activations** (sigmoid, tanh) are accessed sequentially by index — the index depends on the activation value, which does leak through power. **This is a known limitation of v1.0.** Mitigation planned for v1.1: input-blinded LUT access.
 
 4. **Weight decryption per layer**: only one layer's weights are ever in SRAM simultaneously. The decryption scratch is zeroed immediately after the forward pass through each layer, limiting the window for power analysis.
+
+**Blinding-mask seed:** the LUT-blinding offset is drawn from an Xorshift32 PRNG.
+Its default seed is now *derived from the device key* (`BLAKE2s(key, {PRNG})`),
+not a public constant — so an attacker who does not hold the key cannot predict
+the mask stream (previously the fixed default made every mask public, nullifying
+the blinding). Seeding with hardware entropy via `mnv_seed_prng()` after
+`mnv_init()` is still recommended: a static seed repeats the same mask sequence
+across power cycles, which trace averaging can strip.
 
 **Residual risk (v1.0):** DPA against activation LUT accesses is theoretically possible with many traces. The attack complexity is high but not infeasible for a well-resourced adversary. See v1.1 roadmap.
 
@@ -161,7 +190,8 @@ Minerva assumes an adversary with:
 | Property | Status | Verified how | Notes |
 |---|---|---|---|
 | Weight confidentiality | Design intent | — | ChaCha20-256 encryption |
-| Weight integrity | Host-tested | tamper→`MNV_ERR_TAMPER` | BLAKE2s-256 MAC |
+| Weight integrity | Host-tested | tamper→`MNV_ERR_TAMPER` | BLAKE2s-256 MAC over ciphertext |
+| Model-structure integrity | Host-tested | metadata-tamper→`MNV_ERR_TAMPER` | MAC covers `S`(structure)‖ciphertext |
 | Tamper detection (flash) | Host-tested | init + `mnv_verify` tests | MAC at init and on demand |
 | Fault-injection **detection** | Design intent | logic runs on host | canaries + double-run; **resistance not lab-tested** |
 | Constant-time arithmetic (timing) | Host-tested | dudect timing test (compare) | branchless by construction elsewhere |

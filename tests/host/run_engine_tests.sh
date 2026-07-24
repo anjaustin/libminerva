@@ -56,6 +56,14 @@ run_cfg mlp_big test_engine_mlp.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=260 -DMNV_LAYER_0_SIZE=260 -DMNV_LAYER_1_SIZE=4 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# Structural authentication (audit F1): the MAC now covers S(structure)||ct, so
+# a post-compile edit of an activation, an interior width, or num_layers — with
+# the ciphertext and stored MAC untouched — is rejected as MNV_ERR_TAMPER.
+run_cfg metadata_auth test_metadata_auth.c "$ROOT/src/arch/mnv_mlp.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_MLP \
+    -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=16 -DMNV_LAYER_1_SIZE=8 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
+
 # CNN1D
 run_cfg cnn1d test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_CNN1D \
@@ -77,6 +85,13 @@ run_cfg bnn_bigoffset test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
     -DMNV_INPUT_SIZE=256 -DMNV_LAYER_0_SIZE=264 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=8 -DMNV_NUM_LAYERS=3
+
+# BNN — accumulator wider than INT16_MAX (audit F2). Single linear layer of
+# width 40000, all-agree, so the popcount accumulator = 40000 (wraps int16).
+run_cfg bnn_overflow test_bnn_overflow.c "$ROOT/src/arch/mnv_bnn.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_BNN -DMNV_QUANT_BINARY \
+    -DMNV_INPUT_SIZE=40000 -DMNV_LAYER_0_SIZE=4 -DMNV_LAYER_1_SIZE=4 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=1
 
 # BNN — multi-layer, input widths multiple of 8
 run_cfg bnn test_engine_bnn.c "$ROOT/src/arch/mnv_bnn.c" \

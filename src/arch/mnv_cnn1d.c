@@ -30,6 +30,18 @@
 #define MNV_CNN_POOL_LEN   (MNV_CNN_CONV_LEN / MNV_CNN_POOL_SIZE)
 #define MNV_CNN_FLAT_SIZE  (MNV_CNN_NUM_FILTERS * MNV_CNN_POOL_LEN)
 
+/* Compile-time shape sanity (F3). CNN1D takes its shape from the MNV_CNN_*
+ * macros (num_layers == 0), so a misconfigured build has no runtime layer
+ * descriptor to catch it. These make an impossible/inconsistent geometry a
+ * build error instead of a silent runtime miscompute. The blob's core dims are
+ * additionally bound into the integrity MAC (see mnv_struct_auth.h), so an
+ * engine/compiler shape mismatch is rejected at mnv_init(). */
+MNV_STATIC_ASSERT(MNV_INPUT_SIZE >= MNV_CNN_KERNEL_SIZE, cnn_kernel_wider_than_input);
+MNV_STATIC_ASSERT(MNV_CNN_CONV_LEN >= MNV_CNN_POOL_SIZE, cnn_pool_wider_than_conv);
+MNV_STATIC_ASSERT(MNV_CNN_POOL_LEN > 0U,                 cnn_pool_len_zero);
+MNV_STATIC_ASSERT(MNV_CNN_FLAT_SIZE == MNV_CTX_BUF_SIZE, cnn_flat_vs_ctx_buf);
+MNV_STATIC_ASSERT(MNV_CNN_FLAT_SIZE <= MNV_CTX_BUF_SIZE, cnn_featmap_overflows_buf);
+
 /* Static scratch for one filter's pre-pool conv output.
  * NOTE: file-scope (not in mnv_ctx_t) -> this forward pass is single-context
  * and not reentrant. Fine for the intended one-inference-at-a-time embedded

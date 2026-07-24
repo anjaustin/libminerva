@@ -9,11 +9,14 @@
  * Build: see tests/host/run_engine_tests.sh.
  */
 
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
 #include "mnv_kdf.h"
+#include "test_blob_mac.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -102,9 +105,8 @@ int main(void){
     mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
     mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc,k_enc,nonce,0);
     mnv_chacha20_decrypt(&cc,pt,ct,PT_LEN);
-    mnv_blake2s_mac(k_mac,32,ct,PT_LEN,mac);
 
-    mnv_crypto_header_t H; memcpy(H.iv,nonce,12); memcpy(H.mac,mac,32);
+    mnv_crypto_header_t H; memcpy(H.iv,nonce,12);
     H.weight_count=L0W+L1W+L2W; H.bias_count=H0+H1+OUT;
     mnv_layer_desc_t L[3]={
         { IN, H0, MNV_ACT_SIGN,   NULL,NULL },
@@ -112,6 +114,7 @@ int main(void){
         { H1, OUT,MNV_ACT_LINEAR, NULL,NULL },
     };
     mnv_model_t M={ MNV_ABI_VERSION, 3, L, &H, key, ct, PT_LEN };
+    test_blob_mac(&M, k_mac, ct, PT_LEN, mac); memcpy(H.mac,mac,32);
 
     static mnv_ctx_t ctx;
     CHECK(mnv_init(&ctx,&M)==MNV_OK, "init valid BNN model -> OK");

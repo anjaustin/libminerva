@@ -20,7 +20,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "../../include/mnv_config.h"
 #include "../../include/mnv_types.h"
 #include "../../src/core/mnv_fixed.h"

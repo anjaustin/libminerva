@@ -13,7 +13,9 @@
  * real lookups (one step) while still returning x unchanged. Pre-fix the linear
  * path left the PRNG untouched.
  */
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "mnv_lut.h"
 #include "mnv_prng.h"

@@ -16,7 +16,9 @@
  * caching a white-box read of ctx across a call. Driven against the outauth +
  * crypto sources only.
  */
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "mnv_outauth.h"
 #include <stdio.h>

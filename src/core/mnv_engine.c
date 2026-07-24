@@ -16,6 +16,7 @@
 #include "mnv_chacha20.h"
 #include "mnv_ct.h"
 #include "mnv_kdf.h"
+#include "mnv_struct_auth.h"
 #include "mnv_outauth.h"
 #include "mnv_prng.h"
 #if defined(MNV_ARCH_MLP)
@@ -73,6 +74,18 @@ static mnv_status_t engine_verify_weight_mac(const mnv_model_t *model)
     mnv_kdf_derive(model->key, MNV_KDF_LABEL_MAC, k_mac);
     mnv_blake2s_init(&bctx, k_mac, (uint8_t)MNV_CHACHA20_KEY_SIZE);
     mnv_secure_zero(k_mac, sizeof(k_mac));
+
+    /* Authenticate the model STRUCTURE first (S), then the ciphertext:
+     *   MAC = BLAKE2s(k_mac, S || ciphertext)
+     * S is read from the exact fields the engine is about to run on, so a
+     * post-compile edit of any layer size/activation/num_layers changes S here
+     * and the MAC no longer matches (MNV_ERR_TAMPER). See mnv_struct_auth.h. S
+     * lives in RAM on every target (plain reads), unlike the flash blob below. */
+    {
+        uint8_t sbuf[MNV_STRUCT_MAX_BYTES];
+        size_t  slen = mnv_struct_serialize(model, sbuf);
+        mnv_blake2s_update(&bctx, sbuf, (uint32_t)slen);
+    }
 #if defined(MNV_PROGMEM_WEIGHTS)
     /* AVR: read the flash blob in 64B chunks via pgm_read_byte. */
     {
@@ -144,7 +157,22 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
 #endif
 
     mnv_canary_plant(ctx);
-    ctx->prng_state        = (uint32_t)MNV_PRNG_SEED_DEFAULT;
+    /* Default LUT-blinding PRNG seed, derived from the device key rather than a
+     * public constant (F4). With the old fixed MNV_PRNG_SEED_DEFAULT the entire
+     * xorshift mask stream was publicly predictable, so the blinded LUT gave an
+     * attacker who knew the (published) seed no protection at all. Deriving it
+     * from the master key makes the stream key-dependent — unknown without the
+     * key. mnv_seed_prng() with real hardware entropy is still recommended for
+     * per-power-cycle trace diversity (a static seed repeats the mask sequence
+     * across boots, which averaging can strip). */
+    {
+        uint8_t seed[MNV_CHACHA20_KEY_SIZE];
+        mnv_kdf_derive(model->key, MNV_KDF_LABEL_PRNG, seed);
+        uint32_t s = (uint32_t)seed[0]        | ((uint32_t)seed[1] << 8)
+                   | ((uint32_t)seed[2] << 16) | ((uint32_t)seed[3] << 24);
+        ctx->prng_state = (s != 0U) ? s : (uint32_t)MNV_PRNG_SEED_DEFAULT;
+        mnv_secure_zero(seed, sizeof(seed));
+    }
     ctx->inference_counter = 0U;
 
     /* Law I — integrity before anything. Uses the AVR-safe chunked pgm_read

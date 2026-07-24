@@ -171,6 +171,9 @@ the level stated here.
   (MLP + CNN1D) — including weight transpose, blob section order, and dense shift.
 - Integrity/authentication: tampered ciphertext → `MNV_ERR_TAMPER`; model binding
   at `mnv_init`; output-MAC verification, replay counter, and the 2³² wraparound.
+- **Model-structure integrity**: the MAC covers `S(structure) ‖ ciphertext`, so a
+  post-compile edit of a layer's activation, an interior width, or `num_layers`
+  (ciphertext untouched) → `MNV_ERR_TAMPER` (`test_metadata_auth`).
 - Topology-mismatch rejection; the >64 KB length path; per-layer buffer sizing.
 - **Constant-time *timing*** of `mnv_ct_compare` (dudect-style Welch t-test vs a
   leaky control that must itself show the leak).
@@ -526,6 +529,52 @@ items, each remediated with a regression test where testable:
   pattern for timestamped session dumps.
 
 ---
+
+### Local audit remediation (B1–B5)
+
+A second first-hand source audit (reading every module, not just the docs), with
+a working proof-of-concept for the primary finding and a regression test per
+item.
+
+- **B1 — Model structure was unauthenticated (medium, security).** The integrity
+  MAC covered only the ciphertext blob, but the engine drives inference from the
+  model's *structure* — `num_layers` and each layer's `input_size` /
+  `output_size` / `activation` (MLP/BNN), or the CNN core dims (CNN1D) — which
+  lived in a mutable descriptor outside the MAC. An attacker able to rewrite the
+  flash image (in scope per `docs/threat_model.md` §3.1) could flip a
+  nonlinearity to identity, resize an interior layer, or collapse the network
+  while still passing a ciphertext-only integrity check — running a structurally
+  different, never-verified model that `mnv_init()` reported as `MNV_OK` (a Law I
+  violation). A PoC demonstrated the hijack. **Fix:** the MAC is now computed
+  over `S || ciphertext`, where `S` is a canonical serialization of the structure
+  (`src/security/mnv_struct_auth.h`), produced byte-identically by the engine and
+  the Python compiler; any structural edit changes the engine-side `S` and fails
+  the MAC. Blob-format/ABI bumped to `0x02` (pre-`0x02` blobs are rejected). As a
+  bonus, an engine/blob *shape* mismatch (wrong `-D` dims, or a CNN1D built
+  against the wrong macros) now fails loudly at init instead of miscomputing. New
+  `test_metadata_auth.c` proves activation / interior-width / `num_layers`
+  tampers are caught while a ciphertext-flip control and an identical-copy
+  negative-control behave correctly.
+- **B2 — BNN accumulator overflow (low, latent).** `bnn_dot_bits` summed into an
+  `int16_t` (range ±`in_sz`); a layer wider than 32767 inputs — reachable under
+  the large-SRAM budgets (STM32F4) — overflowed. Widened to `int32_t`. New
+  `test_bnn_overflow.c` (a 40000-wide all-agree layer) fails on the old `int16`
+  path and passes on the fix.
+- **B3 — CNN1D compile-time guards (low).** CNN1D takes its shape from macros
+  (`num_layers == 0`), so it had no runtime topology backstop. Added
+  `static_assert`s tying the derived conv/pool/flat dims together; B1 additionally
+  binds the CNN core dims into the MAC, so a shape mismatch is rejected at init.
+- **B4 — LUT-blinding seed was publicly predictable (info, Law II).** The default
+  Xorshift32 seed for the activation-LUT blinding was a *published constant*, so
+  the entire mask stream was predictable and the blinded LUT gave a key-less
+  attacker no protection. The default is now derived from the device key
+  (`BLAKE2s(key, {PRNG})`, label `0x04`); hardware-entropy seeding via
+  `mnv_seed_prng()` remains recommended for per-power-cycle trace diversity. Docs
+  corrected from "weaker" to state precisely what each mode does and does not
+  protect.
+- **B5 — Hygiene.** Removed a stale Q15 comment (H5 fallout) in `mnv_outauth.c`;
+  `#ifndef`-guarded `MNV_ARCH_HOST`/`MNV_TARGET_HOST` so the host build is
+  warning-free.
 
 ## Python Validation Note
 

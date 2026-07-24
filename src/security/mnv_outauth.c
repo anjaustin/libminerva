@@ -47,10 +47,13 @@
  * Total:  OUTPUT_SIZE + INPUT_SIZE + 4 bytes
  * ========================================================================= */
 
-/* Byte lengths — mnv_act_t is 2 bytes under Q15, so the MAC input must be
- * sized and laid out in BYTES, not element counts. Using element counts left
- * the upper half of every Q15 output/input element outside the MAC, so those
- * bytes could be tampered undetected. */
+/* Byte lengths — the MAC input is sized and laid out in BYTES, not element
+ * counts, via sizeof(mnv_act_t). mnv_act_t is 1 byte for every current
+ * quantization (Q8/Q4/binary), so this equals the element count today; the
+ * discipline is kept so a future multi-byte activation type would still be
+ * fully covered by the MAC (a raw element count would leave its upper bytes
+ * outside the MAC and tamperable). (This originally guarded the removed 2-byte
+ * Q15 type — see mnv_types.h, H5.) */
 #define MNV_AUTH_OUT_BYTES (MNV_OUTPUT_SIZE * sizeof(mnv_act_t))
 #define MNV_AUTH_IN_BYTES  (MNV_INPUT_SIZE  * sizeof(mnv_act_t))
 #define MNV_AUTH_BUF_SIZE  (MNV_AUTH_OUT_BYTES + MNV_AUTH_IN_BYTES + 4U)

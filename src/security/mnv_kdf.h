@@ -33,9 +33,10 @@
  * (a device built with different labels than the compiler used will reject every
  * model at the MAC check). */
 typedef enum {
-    MNV_KDF_LABEL_ENC = 0x01,   /* ChaCha20 weight-blob encryption */
-    MNV_KDF_LABEL_MAC = 0x02,   /* BLAKE2s   weight-blob MAC       */
-    MNV_KDF_LABEL_OUT = 0x03,   /* BLAKE2s   output authentication */
+    MNV_KDF_LABEL_ENC  = 0x01,  /* ChaCha20 weight-blob encryption   */
+    MNV_KDF_LABEL_MAC  = 0x02,  /* BLAKE2s   weight-blob MAC         */
+    MNV_KDF_LABEL_OUT  = 0x03,  /* BLAKE2s   output authentication   */
+    MNV_KDF_LABEL_PRNG = 0x04,  /* LUT-blinding PRNG default seed    */
 } mnv_kdf_label_t;
 
 /**
