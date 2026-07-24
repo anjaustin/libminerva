@@ -139,6 +139,21 @@ int main(void){
     static mnv_ctx_t ctxt;
     CHECK(mnv_init(&ctxt,&Mt)==MNV_ERR_TAMPER, "init flipped ct -> TAMPER");
 
+    /* Structural-authentication battery on the BNN path (R6): every field is in
+     * S, so a metadata-only tamper (ciphertext + MAC untouched) is rejected. */
+    { mnv_layer_desc_t Lt[3]; memcpy(Lt,L,sizeof(Lt)); Lt[1].activation=MNV_ACT_RELU;
+      mnv_model_t Mn=M; Mn.layers=Lt; static mnv_ctx_t c;
+      CHECK(mnv_init(&c,&Mn)==MNV_ERR_TAMPER, "BNN activation flip -> TAMPER"); }
+    { mnv_layer_desc_t Lt[3]; memcpy(Lt,L,sizeof(Lt)); Lt[0].output_size=(uint16_t)(H0-1);
+      mnv_model_t Mn=M; Mn.layers=Lt; static mnv_ctx_t c;
+      CHECK(mnv_init(&c,&Mn)==MNV_ERR_TAMPER, "BNN interior width change -> TAMPER"); }
+    { mnv_model_t Mn=M; Mn.num_layers=200; static mnv_ctx_t c;
+      CHECK(mnv_init(&c,&Mn)==MNV_ERR_CONFIG, "BNN num_layers=200 -> CONFIG"); }
+    { mnv_crypto_header_t Hn=H; Hn.iv[0]^=0x01; mnv_model_t Mn=M; Mn.crypto=&Hn;
+      static mnv_ctx_t c; CHECK(mnv_init(&c,&Mn)==MNV_ERR_TAMPER, "BNN IV flip -> TAMPER"); }
+    { mnv_crypto_header_t Hn=H; Hn.weight_count^=0x1u; mnv_model_t Mn=M; Mn.crypto=&Hn;
+      static mnv_ctx_t c; CHECK(mnv_init(&c,&Mn)==MNV_ERR_TAMPER, "BNN weight_count flip -> TAMPER"); }
+
     printf("%s (%d failure[s])\n", fails?"FAILED":"ALL PASS", fails);
     return fails;
 }
