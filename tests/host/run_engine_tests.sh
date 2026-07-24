@@ -64,6 +64,13 @@ run_cfg metadata_auth test_metadata_auth.c "$ROOT/src/arch/mnv_mlp.c" \
     -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=16 -DMNV_LAYER_1_SIZE=8 \
     -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
 
+# Fuzz mnv_init (R4): single-field mutations of a genuine model — must never
+# crash (ASan/UBSan) and never accept a tampered model. 100k iters under CI.
+run_cfg fuzz_init test_fuzz_init.c "$ROOT/src/arch/mnv_mlp.c" \
+    -DMNV_TARGET_HOST -DMNV_ARCH_MLP -DFUZZ_ITERS=100000 \
+    -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=16 -DMNV_LAYER_1_SIZE=8 \
+    -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3
+
 # CNN1D
 run_cfg cnn1d test_engine_cnn1d.c "$ROOT/src/arch/mnv_cnn1d.c" \
     -DMNV_TARGET_HOST -DMNV_ARCH_CNN1D \
