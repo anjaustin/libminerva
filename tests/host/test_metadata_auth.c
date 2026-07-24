@@ -122,6 +122,24 @@ int main(void) {
               "control: 1 ciphertext byte -> TAMPER");
     }
 
+    /* (5) Flip the ChaCha20 IV (nonce). It is not in the ciphertext, but it
+     *     selects the decryption keystream, so an unauthenticated IV would let
+     *     an attacker decrypt the authentic blob into garbage weights. It is
+     *     bound into S, so a flip is rejected. */
+    {
+        mnv_crypto_header_t Ht = H; Ht.iv[0] ^= 0x01;
+        mnv_model_t Mt = M; Mt.crypto = &Ht;
+        static mnv_ctx_t cx;
+        CHECK(mnv_init(&cx, &Mt) == MNV_ERR_TAMPER, "IV (nonce) flip -> TAMPER");
+    }
+
+    /* (6) A NULL crypto header must be rejected cleanly, not dereferenced. */
+    {
+        mnv_model_t Mt = M; Mt.crypto = NULL;
+        static mnv_ctx_t cx;
+        CHECK(mnv_init(&cx, &Mt) == MNV_ERR_CONFIG, "NULL crypto header -> CONFIG");
+    }
+
     printf("%s (%d failure[s])\n", fails ? "FAILED" : "ALL PASS", fails);
     return fails;
 }

@@ -136,6 +136,21 @@ int main(void){
     static mnv_ctx_t ctxt;
     CHECK(mnv_init(&ctxt,&Mt)==MNV_ERR_TAMPER, "init flipped ct -> TAMPER");
 
+    /* Structural tamper on num_layers (CNN1D ships num_layers=0, layers=NULL).
+     * Must be rejected cleanly, never dereference NULL / overflow the preamble
+     * buffer (red-team RT2). > MNV_NUM_LAYERS -> CONFIG; in-bounds but layers
+     * NULL -> the preamble can't match -> TAMPER. */
+    { mnv_model_t Mn=M; Mn.num_layers=200;
+      static mnv_ctx_t c; CHECK(mnv_init(&c,&Mn)==MNV_ERR_CONFIG,
+          "num_layers=200 -> CONFIG (no overflow)"); }
+    { mnv_model_t Mn=M; Mn.num_layers=2;
+      static mnv_ctx_t c; CHECK(mnv_init(&c,&Mn)==MNV_ERR_TAMPER,
+          "num_layers=2, layers NULL -> TAMPER (no deref)"); }
+
+    /* IV flip must be caught (nonce is authenticated via S). */
+    { mnv_crypto_header_t Hn=H; Hn.iv[0]^=0x01; mnv_model_t Mn=M; Mn.crypto=&Hn;
+      static mnv_ctx_t c; CHECK(mnv_init(&c,&Mn)==MNV_ERR_TAMPER, "IV flip -> TAMPER"); }
+
     printf("%s (%d failure[s])\n", fails?"FAILED":"ALL PASS", fails);
     return fails;
 }

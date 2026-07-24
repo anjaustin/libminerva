@@ -120,6 +120,19 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
     if (!ctx || !model) return MNV_ERR_NULL;
     mnv_secure_zero(ctx, sizeof(mnv_ctx_t));
     if (model->version != MNV_ABI_VERSION)   return MNV_ERR_CONFIG;
+    /* Reject NULL sub-pointers up front: the structural serialization and the
+     * integrity check below dereference model->crypto (iv + mac), model->key,
+     * and model->encrypted_weights. A tampered descriptor could NULL any of
+     * them; catch it here rather than faulting. */
+    if (!model->crypto || !model->key || !model->encrypted_weights)
+                                             return MNV_ERR_CONFIG;
+    /* Bound num_layers for EVERY architecture BEFORE serializing the structural
+     * preamble (mnv_struct_auth.h) — its stack buffer is sized to MNV_NUM_LAYERS
+     * layers. CNN1D ships num_layers==0 and skips the per-arch descriptor block
+     * below, so without this an attacker-tampered CNN1D num_layers would drive
+     * the serializer past that buffer (and dereference the NULL layers array).
+     * Genuine models satisfy this (CNN1D: 0; MLP/BNN: their real count). */
+    if (model->num_layers > MNV_NUM_LAYERS)  return MNV_ERR_CONFIG;
 #if defined(MNV_PROGMEM_WEIGHTS)
     /* AVR reads flash weights through 16-bit near pointers (pgm_read_byte), so
      * the encrypted blob must live in the low 64 KB of flash. Larger models on
@@ -132,8 +145,9 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
     /* Layer count check for the descriptor-driven architectures (MLP, BNN).
      * CNN1D uses num_layers=0 and derives its shape from the MNV_CNN_* macros. */
 #if defined(MNV_ARCH_MLP) || defined(MNV_ARCH_BNN)
-    if (model->num_layers == 0 ||
-        model->num_layers > MNV_NUM_LAYERS)  return MNV_ERR_CONFIG;
+    /* Descriptor-driven archs need a non-empty, non-NULL layer array (the upper
+     * bound on num_layers was already enforced above). */
+    if (model->num_layers == 0 || model->layers == NULL) return MNV_ERR_CONFIG;
 
     /* Topology-consistency guard (defense-in-depth for compile-time buffer
      * sizing). The ctx buffers in THIS translation unit are sized from the
