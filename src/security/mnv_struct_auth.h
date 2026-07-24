@@ -39,9 +39,14 @@
  *         LE16 MNV_CNN_KERNEL_SIZE
  *         LE16 MNV_CNN_NUM_FILTERS
  *         LE16 MNV_CNN_POOL_SIZE
+ *     always, last:
+ *         u8[MNV_CHACHA20_IV_SIZE]  crypto->iv   (ChaCha20 nonce)
  *
  * The blob length is already implicitly authenticated (the MAC hashes exactly
- * encrypted_len ciphertext bytes), so it is not repeated in S.
+ * encrypted_len ciphertext bytes), so it is not repeated in S. The IV IS
+ * included: it is not part of the ciphertext but selects the decryption
+ * keystream, so an unauthenticated IV would let an attacker swap it and decrypt
+ * the (authentic) ciphertext into garbage weights while the MAC still passed.
  *
  * Header-only (static inline) so it links into the engine and every test/host
  * TU with no build wiring, exactly like mnv_kdf.h.
@@ -62,11 +67,13 @@
 #  define MNV_STRUCT_ARCH_ID  1u   /* MLP (default) */
 #endif
 
-/* Upper bound on the serialized length. MLP/BNN: 3 header bytes + 5 per layer
- * (num_layers <= MNV_NUM_LAYERS, checked in mnv_init before this runs). CNN1D:
- * 3 + 10. Take the max so one stack buffer fits either shape. */
+/* Upper bound on the serialized length. 3 header bytes + the per-arch body
+ * (MLP/BNN: 5 per layer, num_layers <= MNV_NUM_LAYERS enforced in mnv_init
+ * before this runs; CNN1D: 10) + the trailing IV. Take the max body so one
+ * stack buffer fits either shape. */
 #define MNV_STRUCT_MAX_BYTES \
-    (3u + ((MNV_NUM_LAYERS * 5u) > 10u ? (MNV_NUM_LAYERS * 5u) : 10u))
+    (3u + ((MNV_NUM_LAYERS * 5u) > 10u ? (MNV_NUM_LAYERS * 5u) : 10u) \
+        + MNV_CHACHA20_IV_SIZE)
 
 static inline void mnv_struct_put16_(uint8_t *p, uint16_t v)
 {
@@ -89,7 +96,13 @@ static inline size_t mnv_struct_serialize(const mnv_model_t *model, uint8_t *out
     out[o++] = (uint8_t)MNV_STRUCT_ARCH_ID;
     out[o++] = (uint8_t)model->num_layers;
 
-    if (model->num_layers > 0u) {
+    /* Per-layer structure (MLP/BNN). The layers != NULL guard matters for a
+     * tampered CNN1D model: it ships num_layers==0 with layers==NULL, and an
+     * attacker could raise num_layers while leaving layers NULL — without the
+     * guard that dereferences NULL. Skipping the loop then yields a preamble
+     * that cannot match a genuine one, so the MAC rejects it. mnv_init bounds
+     * num_layers <= MNV_NUM_LAYERS, so `out` cannot overflow here. */
+    if (model->num_layers > 0u && model->layers != NULL) {
         for (uint8_t i = 0; i < model->num_layers; i++) {
             mnv_struct_put16_(out + o, model->layers[i].input_size);  o += 2;
             mnv_struct_put16_(out + o, model->layers[i].output_size); o += 2;
@@ -97,7 +110,7 @@ static inline size_t mnv_struct_serialize(const mnv_model_t *model, uint8_t *out
         }
     }
 #if defined(MNV_ARCH_CNN1D)
-    else {
+    else if (model->num_layers == 0u) {
         mnv_struct_put16_(out + o, (uint16_t)MNV_INPUT_SIZE);      o += 2;
         mnv_struct_put16_(out + o, (uint16_t)MNV_OUTPUT_SIZE);     o += 2;
         mnv_struct_put16_(out + o, (uint16_t)MNV_CNN_KERNEL_SIZE); o += 2;
@@ -105,6 +118,12 @@ static inline size_t mnv_struct_serialize(const mnv_model_t *model, uint8_t *out
         mnv_struct_put16_(out + o, (uint16_t)MNV_CNN_POOL_SIZE);   o += 2;
     }
 #endif
+
+    /* Authenticate the ChaCha20 nonce. Caller guarantees model->crypto != NULL
+     * (mnv_init rejects a NULL crypto header before reaching here). */
+    for (uint8_t j = 0; j < (uint8_t)MNV_CHACHA20_IV_SIZE; j++)
+        out[o++] = model->crypto->iv[j];
+
     return o;
 }
 
