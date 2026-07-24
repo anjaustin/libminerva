@@ -102,6 +102,18 @@
     #error "No MNV_TARGET defined. Edit mnv_config.h."
 #endif
 
+/* Opt-out of PROGMEM weight storage on an AVR target: read the encrypted blob
+ * from a flat RAM/`.data` buffer instead of flash. Needed by the on-target
+ * self-test, which builds its encrypted blob in RAM at runtime — a compile-time
+ * PROGMEM const is impossible for a runtime-built blob, and pgm_read of a RAM
+ * address returns garbage on a Harvard AVR (this is why the self-test failed
+ * under simavr until it set this). Does NOT affect the activation LUT tables,
+ * which remain PROGMEM. Normal firmware (compiler-emitted PROGMEM weights.c)
+ * must NOT define this. */
+#if defined(MNV_NO_PROGMEM_WEIGHTS) && defined(MNV_PROGMEM_WEIGHTS)
+#  undef MNV_PROGMEM_WEIGHTS
+#endif
+
 /* =========================================================================
  * ARCHITECTURE SELECTION
  * Uncomment exactly one architecture.

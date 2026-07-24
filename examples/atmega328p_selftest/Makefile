@@ -16,8 +16,14 @@ OBJCOPY = avr-objcopy
 SIZE    = avr-size
 MINERVA = ../..
 
+# MNV_NO_PROGMEM_WEIGHTS: this self-test builds its encrypted blob in RAM at
+# runtime, so the engine must read it from RAM, not pgm_read it from flash.
+# Without this the blob read returns garbage on a Harvard AVR and the MAC fails
+# (the self-test returned FAIL under simavr until this was added). The activation
+# LUTs remain in PROGMEM; the compiler-emitted classify example keeps weights in
+# PROGMEM (that path is validated by tests/host/test_avr_sim.sh).
 CFLAGS = -mmcu=$(MCU) -DF_CPU=$(F_CPU) -DMNV_TARGET_ATMEGA328P \
-         -DMNV_ARCH_MLP \
+         -DMNV_ARCH_MLP -DMNV_NO_PROGMEM_WEIGHTS \
          -DMNV_INPUT_SIZE=8 -DMNV_LAYER_0_SIZE=8 -DMNV_LAYER_1_SIZE=8 \
          -DMNV_OUTPUT_SIZE=4 -DMNV_NUM_LAYERS=3 \
          -Os -std=c11 -Wall -Wextra -ffunction-sections -fdata-sections \
