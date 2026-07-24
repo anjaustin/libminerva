@@ -143,9 +143,9 @@ across power cycles, which trace averaging can strip.
 
 **Mitigations:**
 
-1. **SRAM canaries**: `uint32_t` sentinel values are planted at known locations before inference and checked after every layer. A fault that corrupts SRAM (common with voltage glitching) will corrupt canaries and trigger `MNV_ERR_GLITCH`.
+1. **SRAM canaries**: `uint32_t` sentinel values **bracket** the sensitive buffer region (`canary_pre` before it, `canary_post` after — see the `mnv_ctx_t` field order, locked by `tests/host/test_canary_layout.c`) and are checked after every layer. A fault or overrun that corrupts SRAM in or around the buffers (common with voltage glitching) perturbs a canary and triggers `MNV_ERR_GLITCH`. (Through the B-series both canary arrays sat together after the struct, bracketing nothing; that is fixed.)
 
-2. **Double-run comparison**: inference is executed twice with independent ChaCha20 counter streams. Results are compared using constant-time compare. A single-event fault that alters the computation of one run is detected.
+2. **Double-run comparison**: inference is executed twice and the two outputs are compared in constant time. **Honest scope:** both runs decrypt the *same* weights with the *same* key, IV, and counter (0) — they are **identical recomputations, not independent streams** (they cannot be independent: both must reproduce the same plaintext weights). The check therefore detects a **transient** single-event fault that perturbs exactly one run. A *permanent* fault (a stuck bit, or one reproduced identically in both runs) is **not** caught here — canaries (spatial corruption) and MAC re-verification (`mnv_verify`) cover other fault classes, and a hardware secure element covers the rest.
 
 3. **Constant-time MAC comparison**: `mnv_ct_compare()` uses bitwise OR accumulation — a fault that skips one comparison byte cannot cause a false positive.
 
