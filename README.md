@@ -576,6 +576,37 @@ item.
   `#ifndef`-guarded `MNV_ARCH_HOST`/`MNV_TARGET_HOST` so the host build is
   warning-free.
 
+### Red-team pass (post-B1)
+
+An adversarial red-team of the B-series work — recompiling the demo model with
+the shipped compiler and fault-injecting every field of the model descriptor —
+surfaced two real defects in the *new* code, each fixed with a regression test
+that fails pre-fix.
+
+- **RT1 — ChaCha20 IV/nonce was unauthenticated (medium, security).** The MAC
+  covered `S(structure) ‖ ciphertext` but not `crypto->iv`, even though the IV
+  selects the decryption keystream. An attacker able to rewrite flash could flip
+  one IV byte, leaving the authentic ciphertext to decrypt into *garbage weights*
+  while `mnv_init()` still returned `MNV_OK` (demonstrated: the output diverged
+  from baseline). **Fix:** the IV is now appended to `S` (engine
+  `mnv_struct_serialize` and the Python compiler, byte-identical), so a swapped
+  IV fails the MAC — the authenticated header is now `structure ‖ iv`.
+- **RT2 — CNN1D `num_layers` tamper crashed the new serializer (medium).**
+  `mnv_init` skips the layer-count guard for CNN1D (`num_layers == 0`), so a
+  tampered `num_layers` reached `mnv_struct_serialize`, which dereferenced the
+  `NULL` layers array and overran its stack buffer (UBSan: NULL member access;
+  ASan: SEGV) — an attack surface introduced by B1's own serializer. **Fix:**
+  `mnv_init` now bounds `num_layers <= MNV_NUM_LAYERS` for **every** architecture
+  and rejects a `NULL` `crypto`/`key`/`encrypted_weights`/`layers` up front; the
+  serializer also guards `layers != NULL`. A tampered CNN1D `num_layers` is now
+  cleanly rejected (`MNV_ERR_CONFIG` or `MNV_ERR_TAMPER`), never a crash.
+
+Regressions added: `test_metadata_auth.c` gains IV-flip and NULL-crypto cases;
+`test_engine_cnn1d.c` gains `num_layers=200 → CONFIG`, `num_layers=2`/`layers=NULL
+→ TAMPER`, and IV-flip `→ TAMPER`. (`weight_count`/`bias_count` in the crypto
+header remain unauthenticated but are vestigial — never read by the engine, so
+tampering them has no effect.)
+
 ## Python Validation Note
 
 When simulating Q8 inference in Python, use `//128` for the accumulator
