@@ -2,24 +2,25 @@
  * @file selftest.c
  * @brief On-target self-test scaffold for the AVR PROGMEM metadata fix (H3).
  *
- * *** UNTESTED IN THE FIX ENVIRONMENT — requires avr-gcc + hardware/simavr. ***
+ * Validated under simavr (cycle-accurate ATmega328P) by tests/host/test_avr_sim.sh
+ * — PASS. (Physical-silicon sign-off, and the power/EM & fault-injection lab
+ * checks, are still open; see the README Verification Status.)
  *
  * This is the on-target counterpart to the host access-pattern locks
  * (test_progmem_split.c / check_progmem_placement.sh). It builds a small model
  * in RAM at boot (so no generated weights.c is needed), encrypts it, then runs
- * the FULL engine pipeline — mnv_init (MAC over the PROGMEM... see note),
- * mnv_run, mnv_verify — and compares the output to an independent integer
- * reference. On real AVR this is what actually exercises:
- *   - reading the crypto header / layer descriptors from RAM (the fix), and
- *   - the weight-blob MAC/decrypt via pgm_read.
- * If any of those regressed, the MAC check or the reference comparison fails.
+ * the FULL engine pipeline — mnv_init, mnv_run, mnv_verify — and compares the
+ * output to an independent integer reference. It exercises, on a real Harvard
+ * AVR: the crypto-header / layer-descriptor RAM reads (the metadata fix), the
+ * engine arithmetic end to end, and the blinded-LUT pgm_read.
  *
- * NOTE: this self-test builds the ciphertext into a RAM buffer, so on AVR the
- * blob is NOT in PROGMEM here — it exercises the descriptor/crypto-header RAM
- * reads and the engine arithmetic end to end, but not the pgm_read blob path.
- * To exercise the PROGMEM blob path too, compile a real model with
- * `minerva_compile.py --target atmega328p` and run the atmega328p_classify
- * example; the host test_progmem_split.c already locks the pgm_read blob path.
+ * NOTE: the encrypted blob is built in a RAM buffer at runtime, so this build
+ * sets -DMNV_NO_PROGMEM_WEIGHTS (see the Makefile) to read it from RAM rather
+ * than pgm_read a RAM address (which returns garbage on AVR — this is exactly
+ * why the self-test FAILED under simavr until the flag was added). The pgm_read
+ * *weight-blob* path (compiler-emitted PROGMEM weights.c) is the real deployment
+ * path and is validated separately by test_avr_sim.sh's PROGMEM oracle check and
+ * the atmega328p_classify example.
  *
  * Result signalling (no UART dependency):
  *   PASS -> PB5 (Arduino D13) steady on, plus `selftest_result = 0xA5`
