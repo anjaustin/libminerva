@@ -157,7 +157,22 @@ mnv_status_t mnv_init(mnv_ctx_t *ctx, const mnv_model_t *model)
 #endif
 
     mnv_canary_plant(ctx);
-    ctx->prng_state        = (uint32_t)MNV_PRNG_SEED_DEFAULT;
+    /* Default LUT-blinding PRNG seed, derived from the device key rather than a
+     * public constant (F4). With the old fixed MNV_PRNG_SEED_DEFAULT the entire
+     * xorshift mask stream was publicly predictable, so the blinded LUT gave an
+     * attacker who knew the (published) seed no protection at all. Deriving it
+     * from the master key makes the stream key-dependent — unknown without the
+     * key. mnv_seed_prng() with real hardware entropy is still recommended for
+     * per-power-cycle trace diversity (a static seed repeats the mask sequence
+     * across boots, which averaging can strip). */
+    {
+        uint8_t seed[MNV_CHACHA20_KEY_SIZE];
+        mnv_kdf_derive(model->key, MNV_KDF_LABEL_PRNG, seed);
+        uint32_t s = (uint32_t)seed[0]        | ((uint32_t)seed[1] << 8)
+                   | ((uint32_t)seed[2] << 16) | ((uint32_t)seed[3] << 24);
+        ctx->prng_state = (s != 0U) ? s : (uint32_t)MNV_PRNG_SEED_DEFAULT;
+        mnv_secure_zero(seed, sizeof(seed));
+    }
     ctx->inference_counter = 0U;
 
     /* Law I — integrity before anything. Uses the AVR-safe chunked pgm_read

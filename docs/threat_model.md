@@ -125,6 +125,14 @@ but authenticated, so it cannot be altered undetected.
 
 4. **Weight decryption per layer**: only one layer's weights are ever in SRAM simultaneously. The decryption scratch is zeroed immediately after the forward pass through each layer, limiting the window for power analysis.
 
+**Blinding-mask seed:** the LUT-blinding offset is drawn from an Xorshift32 PRNG.
+Its default seed is now *derived from the device key* (`BLAKE2s(key, {PRNG})`),
+not a public constant — so an attacker who does not hold the key cannot predict
+the mask stream (previously the fixed default made every mask public, nullifying
+the blinding). Seeding with hardware entropy via `mnv_seed_prng()` after
+`mnv_init()` is still recommended: a static seed repeats the same mask sequence
+across power cycles, which trace averaging can strip.
+
 **Residual risk (v1.0):** DPA against activation LUT accesses is theoretically possible with many traces. The attack complexity is high but not infeasible for a well-resourced adversary. See v1.1 roadmap.
 
 ---
