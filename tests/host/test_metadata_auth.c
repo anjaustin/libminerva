@@ -140,6 +140,20 @@ int main(void) {
         CHECK(mnv_init(&cx, &Mt) == MNV_ERR_CONFIG, "NULL crypto header -> CONFIG");
     }
 
+    /* (7) Flip the (informational) header counts — now bound into S (R3). */
+    {
+        mnv_crypto_header_t Ht = H; Ht.weight_count ^= 0x1u;
+        mnv_model_t Mt = M; Mt.crypto = &Ht;
+        static mnv_ctx_t cx;
+        CHECK(mnv_init(&cx, &Mt) == MNV_ERR_TAMPER, "weight_count flip -> TAMPER");
+    }
+    {
+        mnv_crypto_header_t Ht = H; Ht.bias_count ^= 0x80u;
+        mnv_model_t Mt = M; Mt.crypto = &Ht;
+        static mnv_ctx_t cx;
+        CHECK(mnv_init(&cx, &Mt) == MNV_ERR_TAMPER, "bias_count flip -> TAMPER");
+    }
+
     printf("%s (%d failure[s])\n", fails ? "FAILED" : "ALL PASS", fails);
     return fails;
 }

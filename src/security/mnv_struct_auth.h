@@ -40,13 +40,17 @@
  *         LE16 MNV_CNN_NUM_FILTERS
  *         LE16 MNV_CNN_POOL_SIZE
  *     always, last:
- *         u8[MNV_CHACHA20_IV_SIZE]  crypto->iv   (ChaCha20 nonce)
+ *         u8[MNV_CHACHA20_IV_SIZE]  crypto->iv            (ChaCha20 nonce)
+ *         LE32 crypto->weight_count
+ *         LE32 crypto->bias_count
  *
  * The blob length is already implicitly authenticated (the MAC hashes exactly
  * encrypted_len ciphertext bytes), so it is not repeated in S. The IV IS
  * included: it is not part of the ciphertext but selects the decryption
  * keystream, so an unauthenticated IV would let an attacker swap it and decrypt
  * the (authentic) ciphertext into garbage weights while the MAC still passed.
+ * weight_count/bias_count are informational (the engine does not consume them)
+ * but are bound anyway so NO descriptor field is left outside the MAC.
  *
  * Header-only (static inline) so it links into the engine and every test/host
  * TU with no build wiring, exactly like mnv_kdf.h.
@@ -73,12 +77,20 @@
  * stack buffer fits either shape. */
 #define MNV_STRUCT_MAX_BYTES \
     (3u + ((MNV_NUM_LAYERS * 5u) > 10u ? (MNV_NUM_LAYERS * 5u) : 10u) \
-        + MNV_CHACHA20_IV_SIZE)
+        + MNV_CHACHA20_IV_SIZE + 8u /* weight_count + bias_count */)
 
 static inline void mnv_struct_put16_(uint8_t *p, uint16_t v)
 {
     p[0] = (uint8_t)(v & 0xFFu);
     p[1] = (uint8_t)((v >> 8) & 0xFFu);
+}
+
+static inline void mnv_struct_put32_(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v & 0xFFu);
+    p[1] = (uint8_t)((v >> 8)  & 0xFFu);
+    p[2] = (uint8_t)((v >> 16) & 0xFFu);
+    p[3] = (uint8_t)((v >> 24) & 0xFFu);
 }
 
 /**
@@ -119,10 +131,13 @@ static inline size_t mnv_struct_serialize(const mnv_model_t *model, uint8_t *out
     }
 #endif
 
-    /* Authenticate the ChaCha20 nonce. Caller guarantees model->crypto != NULL
-     * (mnv_init rejects a NULL crypto header before reaching here). */
+    /* Authenticate the ChaCha20 nonce and the (informational) header counts.
+     * Caller guarantees model->crypto != NULL (mnv_init rejects a NULL crypto
+     * header before reaching here). */
     for (uint8_t j = 0; j < (uint8_t)MNV_CHACHA20_IV_SIZE; j++)
         out[o++] = model->crypto->iv[j];
+    mnv_struct_put32_(out + o, model->crypto->weight_count); o += 4;
+    mnv_struct_put32_(out + o, model->crypto->bias_count);   o += 4;
 
     return o;
 }

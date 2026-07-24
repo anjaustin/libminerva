@@ -195,8 +195,10 @@ typedef struct {
     uint8_t  iv[MNV_CHACHA20_IV_SIZE];      /* ChaCha20 nonce             */
     uint8_t  mac[MNV_BLAKE2S_DIGEST_SIZE];  /* BLAKE2s over ciphertext    */
                                             /* (encrypt-then-MAC)         */
-    uint32_t weight_count;                  /* number of weights         */
-    uint32_t bias_count;                    /* number of biases          */
+    uint32_t weight_count;                  /* informational; not consumed by   */
+    uint32_t bias_count;                    /* the engine, but bound into the   */
+                                            /* MAC (S) so no header field is    */
+                                            /* left unauthenticated (R3).       */
 } mnv_crypto_header_t;
 
 /* =========================================================================
