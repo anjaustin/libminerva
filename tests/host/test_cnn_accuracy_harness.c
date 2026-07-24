@@ -7,7 +7,9 @@
  * test_cnn_accuracy.sh to measure how well the Q8 engine's decisions match the
  * float model's, and whether --calibrate improves it.
  */
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "mnv_ct.h"
 #include "weights.h"

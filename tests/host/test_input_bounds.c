@@ -10,7 +10,9 @@
  * the DEFAULT range would accept) are rejected with MNV_ERR_INPUT. The check
  * stays branchless — this only exercises the result, not its timing.
  */
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "mnv_ct.h"
 #include <stdio.h>
