@@ -131,7 +131,10 @@ not a public constant — so an attacker who does not hold the key cannot predic
 the mask stream (previously the fixed default made every mask public, nullifying
 the blinding). Seeding with hardware entropy via `mnv_seed_prng()` after
 `mnv_init()` is still recommended: a static seed repeats the same mask sequence
-across power cycles, which trace averaging can strip.
+across power cycles, which trace averaging can strip. The derived default is also
+only as unique as the device key — devices sharing a factory master key share the
+same default mask stream, so the per-device key recommendation in §6 applies to
+the blinding as well.
 
 **Residual risk (v1.0):** DPA against activation LUT accesses is theoretically possible with many traces. The attack complexity is high but not infeasible for a well-resourced adversary. See v1.1 roadmap.
 

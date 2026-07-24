@@ -603,9 +603,44 @@ that fails pre-fix.
 
 Regressions added: `test_metadata_auth.c` gains IV-flip and NULL-crypto cases;
 `test_engine_cnn1d.c` gains `num_layers=200 → CONFIG`, `num_layers=2`/`layers=NULL
-→ TAMPER`, and IV-flip `→ TAMPER`. (`weight_count`/`bias_count` in the crypto
-header remain unauthenticated but are vestigial — never read by the engine, so
-tampering them has no effect.)
+→ TAMPER`, and IV-flip `→ TAMPER`. (The `weight_count`/`bias_count` header fields
+were then bound into the MAC in R3, below.)
+
+### Concern-resolution hardening pass (R1–R6)
+
+A follow-on pass resolving the remaining *software-addressable* concerns from a
+standing-back review (the rest — power/EM & fault-injection lab validation,
+real-AVR execution, an encrypted output channel — need hardware or are features,
+and are documented as such, not closed). The MAC-input format grew, so the ABI
+is bumped **0x02 → 0x03**.
+
+- **R1 — canaries now bracket the buffers.** `canary_pre`/`canary_post` sat
+  together *after* `mnv_ctx_t`, bracketing nothing, so a localized fault of the
+  activation/scratch buffers could pass the check — while the README diagram
+  implied bracketing. Reordered so `canary_pre` leads and `canary_post` trails the
+  sensitive region; `test_canary_layout.c` locks it via `offsetof` and the diagram
+  is corrected.
+- **R2 — double-run claim corrected.** The threat model said the double-run used
+  "independent ChaCha20 counter streams"; both runs actually use counter 0 and are
+  identical recomputations (they must reproduce the same weights). §4.4 now states
+  the honest scope: it catches a *transient* single-event fault, not a permanent one.
+- **R3 — informational header counts authenticated.** `weight_count`/`bias_count`
+  were the last descriptor fields outside the MAC. Bound into `S`
+  (`S = structure ‖ iv ‖ weight_count ‖ bias_count`) so **no descriptor field is
+  unauthenticated**; flipping either now fails the MAC.
+- **R4 — fuzz `mnv_init` + bound the read length.** `test_fuzz_init.c` hammers
+  init with single-field mutations (500k iters locally, 100k in CI) under ASan +
+  UBSan — never crashes, never accepts a tampered model. It surfaced that the
+  attacker-tamperable `encrypted_len` drove the MAC read with no upper bound (an
+  OOB read on a flat-memory host); `mnv_init` now rejects `encrypted_len == 0` or
+  `> MNV_MAX_WEIGHT_BYTES`.
+- **R5 — randomized S-parity.** `test_sparity_fuzz.sh` compiles 12 random MLP
+  topologies (varying layer count/widths/activations) through the real compiler
+  and requires `mnv_init == OK`, guarding engine↔compiler `S` agreement beyond the
+  single fixed emit-test shape; a negative control confirms it is not vacuous.
+- **R6 — BNN structural-tamper coverage.** Extended the metadata-tamper battery
+  (activation / interior-width / `num_layers` / IV / count) to the BNN path, which
+  previously had only a ciphertext-flip check.
 
 ## Python Validation Note
 

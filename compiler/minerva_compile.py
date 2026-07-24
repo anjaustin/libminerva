@@ -52,7 +52,7 @@ def kdf(master, label):
 # model STRUCTURE. Mirrors src/security/mnv_struct_auth.h byte-for-byte so a
 # post-compile edit of any layer size/activation/num_layers (or a CNN dim) is
 # detected by the engine's MAC. See that header for the full rationale.
-ABI_VERSION = 0x02                                    # == MNV_ABI_VERSION
+ABI_VERSION = 0x03                                    # == MNV_ABI_VERSION (S = struct|iv|counts)
 ARCH_MLP, ARCH_CNN1D, ARCH_BNN = 1, 2, 3
 ACT_ID = {'relu':0,'sigmoid':1,'tanh':2,'linear':3,'sign':4}
 def _le16(v): return bytes([v & 0xFF, (v >> 8) & 0xFF])
