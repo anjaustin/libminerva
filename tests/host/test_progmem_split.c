@@ -13,11 +13,14 @@
  * blob. So this locks: (a) mnv_init MAC, (b) mnv_verify MAC, (c) the forward-pass
  * decrypt all go through pgm_read for the blob.
  */
+#ifndef MNV_TARGET_HOST      /* may be passed via -D */
 #define MNV_TARGET_HOST
+#endif
 #include "minerva.h"
 #include "mnv_chacha20.h"
 #include "mnv_blake2s.h"
 #include "mnv_kdf.h"
+#include "test_blob_mac.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -70,12 +73,11 @@ int main(void)
     mnv_kdf_derive(key, MNV_KDF_LABEL_MAC, k_mac);
     mnv_chacha20_ctx_t cc; mnv_chacha20_init(&cc, k_enc, nonce, 0);
     mnv_chacha20_decrypt(&cc, pt, real_ct, PT_LEN);        /* real ciphertext */
-    mnv_blake2s_mac(k_mac, 32, real_ct, PT_LEN, mac);      /* MAC over real   */
 
     /* Poison the blob the model actually points at (so a direct read is wrong). */
     for (int i = 0; i < PT_LEN; i++) poison_ct[i] = (uint8_t)(real_ct[i] ^ 0xFF);
 
-    mnv_crypto_header_t H; memcpy(H.iv, nonce, 12); memcpy(H.mac, mac, 32);
+    mnv_crypto_header_t H; memcpy(H.iv, nonce, 12);
     H.weight_count = W0N+W1N+W2N; H.bias_count = H0+H1+OUT;
     mnv_layer_desc_t L[3] = {
         { IN, H0, MNV_ACT_RELU,   NULL, NULL },
@@ -83,6 +85,8 @@ int main(void)
         { H1, OUT, MNV_ACT_LINEAR, NULL, NULL },
     };
     mnv_model_t M = { MNV_ABI_VERSION, 3, L, &H, key, poison_ct, PT_LEN };
+    /* MAC over S || REAL ciphertext (engine reads real via the pgm_read shim). */
+    test_blob_mac(&M, k_mac, real_ct, PT_LEN, mac); memcpy(H.mac, mac, 32);
 
     static mnv_ctx_t ctx;
     /* If mnv_init read the blob directly it would MAC the poison -> TAMPER. OK

@@ -217,7 +217,13 @@ typedef struct {
                                             /* enforced at mnv_init())            */
 } mnv_model_t;
 
-#define MNV_ABI_VERSION  0x01U
+/* ABI/blob-format version. Bumped 0x01 -> 0x02 when the integrity MAC was
+ * extended to cover the model's structural preamble (num_layers, per-layer
+ * sizes/activation, or CNN core dims) in addition to the ciphertext — see
+ * src/security/mnv_struct_auth.h. A pre-0x02 blob is rejected at the version
+ * check in mnv_init(); even if it weren't, its MAC (ciphertext only) would no
+ * longer match the new S||ciphertext computation. */
+#define MNV_ABI_VERSION  0x02U
 
 /* =========================================================================
  * INFERENCE CONTEXT
