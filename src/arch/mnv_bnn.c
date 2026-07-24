@@ -58,10 +58,14 @@
  * @param len     Number of binary values (in_sz).
  * @return Signed accumulator in range [-len, +len].
  */
-static int16_t bnn_dot_bits(const uint8_t *w, uint32_t w_off,
+static int32_t bnn_dot_bits(const uint8_t *w, uint32_t w_off,
                             const uint8_t *a, uint16_t len)
 {
-    int16_t acc = 0;
+    /* int32 accumulator: the value ranges over [-in_sz, +in_sz]. int16 (the old
+     * type) overflows once a layer is wider than 32767 inputs, which is
+     * reachable under the large-SRAM budgets (e.g. STM32F4). int32 covers any
+     * width the buffers can hold; the popcount is still data-independent. */
+    int32_t acc = 0;
     for (uint16_t i = 0; i < len; i++) {
         /* uint32: a single layer with in_sz*out_sz >= 65536 bits pushes the
          * neuron bit offset past uint16 (would wrap and read wrong weights). */
@@ -69,7 +73,7 @@ static int16_t bnn_dot_bits(const uint8_t *w, uint32_t w_off,
         uint8_t  wb = (uint8_t)((w[wi >> 3] >> (wi & 7u)) & 1u);
         uint8_t  ab = (uint8_t)((a[i  >> 3] >> (i  & 7u)) & 1u);
         /* xor==0 -> agree -> +1 ; xor==1 -> disagree -> -1 (branchless) */
-        acc = (int16_t)(acc + 1 - 2 * (int16_t)(wb ^ ab));
+        acc = acc + 1 - 2 * (int32_t)(wb ^ ab);
     }
     return acc;
 }
@@ -165,7 +169,7 @@ mnv_status_t mnv_bnn_forward(mnv_ctx_t          *ctx,
         /* For each output neuron */
         for (uint16_t n = 0; n < out_sz; n++) {
             /* Weights for neuron n start at bit n*in_sz in the packed buffer. */
-            int16_t acc = bnn_dot_bits((const uint8_t *)ctx->weight_scratch,
+            int32_t acc = bnn_dot_bits((const uint8_t *)ctx->weight_scratch,
                                        (uint32_t)n * (uint32_t)in_sz, packed_src, in_sz);
 
             /* Scale to Q8: acc ∈ [-in_sz, +in_sz] -> [-127, +127], constant-time
