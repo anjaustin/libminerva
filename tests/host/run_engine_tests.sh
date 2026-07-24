@@ -231,6 +231,9 @@ if ! bash "$ROOT/tests/host/test_compiler_emit.sh";     then rc=1; fi
 echo
 if ! bash "$ROOT/tests/host/test_compiler_emit_cnn.sh"; then rc=1; fi
 echo
+# S-parity across random topologies (R5): engine vs compiler structural preamble.
+if ! bash "$ROOT/tests/host/test_sparity_fuzz.sh"; then rc=1; fi
+echo
 # CNN1D quantization accuracy: calibrated dense shift vs heuristic (H4).
 if ! bash "$ROOT/tests/host/test_cnn_accuracy.sh"; then rc=1; fi
 echo
