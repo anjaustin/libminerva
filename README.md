@@ -37,6 +37,9 @@ The smallest supported target is an **ATmega328P** (32 KB flash, 2 KB RAM).
 The ATmega footprint/timing figures quoted below predate the AVR PROGMEM fix
 (H-series) and must be re-measured on hardware — see Verification Status.
 
+> 🧭 **New here?** Start with **[docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md)** — a
+> plain-language, diagrammed tour of what this code is, what it does, and why.
+
 ---
 
 ## The Three Minerva Laws
