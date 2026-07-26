@@ -10,7 +10,7 @@
  *  ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝
  *
  *  Minimal Inference Engine for Robust, Verifiable, and Authenticated ML
- *  Version 1.3.0 — "Athena"
+ *  Version 1.3.1 — "Athena"
  *
  *  The Three Minerva Laws:
  *    I.   Minerva never produces output from an unverified model.
@@ -57,8 +57,8 @@ extern "C" {
 
 #define MNV_VERSION_MAJOR   1
 #define MNV_VERSION_MINOR   3
-#define MNV_VERSION_PATCH   0
-#define MNV_VERSION_STR     "1.3.0-Athena"
+#define MNV_VERSION_PATCH   1
+#define MNV_VERSION_STR     "1.3.1-Athena"
 
 /* =========================================================================
  * LIFECYCLE
@@ -208,8 +208,13 @@ uint8_t mnv_ct_argmax(const mnv_act_t *vec, uint16_t len);
  *   STM32:  RNG peripheral
  *   Host:   /dev/urandom
  *
- * If not called, MNV_PRNG_SEED_DEFAULT is used (weaker — not recommended
- * for production deployments).
+ * If not called, mnv_init() has already seeded the PRNG with a value DERIVED
+ * FROM THE DEVICE KEY (KDF label MNV_KDF_LABEL_PRNG), so the mask stream is
+ * key-dependent and unknown to an attacker without the key. The public
+ * MNV_PRNG_SEED_DEFAULT constant is only a last-resort fallback (used solely
+ * if that derived seed happens to be zero). Seeding here with real hardware
+ * entropy is still recommended: a fixed per-boot seed repeats the same mask
+ * sequence every power cycle, which trace averaging can strip.
  *
  * @param ctx   Initialized context.
  * @param seed  32-bit entropy seed.

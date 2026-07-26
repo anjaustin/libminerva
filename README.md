@@ -2,7 +2,7 @@
 
 | Category | Badges |
 |---|---|
-| **Release** | ![Version](https://img.shields.io/badge/version-1.3.0-blue) ![Codename](https://img.shields.io/badge/codename-Athena-gold) |
+| **Release** | ![Version](https://img.shields.io/badge/version-1.3.1-blue) ![Codename](https://img.shields.io/badge/codename-Athena-gold) |
 | **Core** | ![Language](https://img.shields.io/badge/language-C-00599C) ![Standard](https://img.shields.io/badge/C-C11-blue) ![License](https://img.shields.io/badge/license-MIT-green) |
 | **Quality** | ![Build](https://img.shields.io/badge/build-passing-brightgreen) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen) |
 | **Embedded Constraints** | ![Allocation](https://img.shields.io/badge/allocation-zero-orange) ![Dynamic Memory](https://img.shields.io/badge/dynamic%20memory-none-red) |
@@ -15,7 +15,7 @@
 
 
 **Minimal Inference Engine for Robust, Verifiable, and Authenticated ML**
-*Version 1.3.0 - "Athena"*
+*Version 1.3.1 - "Athena"*
 
 ```
 Small. Secure. Certain.
@@ -849,7 +849,7 @@ yet implemented; split such models or use an STM32 target.
 @software{minerva2025,
   title   = {MINERVA: Minimal Inference Engine for Robust, Verifiable,
              and Authenticated ML},
-  version = {1.3.0},
+  version = {1.3.1},
   year    = {2025},
   note    = {https://github.com/kavishka-dot/libminerva}
 }
