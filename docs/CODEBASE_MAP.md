@@ -167,7 +167,43 @@ Minerva stacks several small tricks. None is magic; together they add up.
 
 ---
 
-## 7. What happens during one `mnv_run()` — step by step
+## 7. Inside one inference
+
+Two ways to look at the same `mnv_run()` call: **what the data does** (how the
+numbers move and change), and **what the guards do** (the safety checks around
+it).
+
+### 7a. The data's path — how the numbers flow
+
+The input is a short list of `int8` numbers. Minerva pushes it through the
+network **one layer at a time**, and only ever **decrypts one layer's weights at
+a time** — use them, then wipe them — so the whole model is never sitting
+unlocked in memory.
+
+```mermaid
+graph TD
+    IN["📥 input · int8[N]<br/>(quantized sensor values)"] --> ACT
+    BLOB["🔒 Encrypted weight blob<br/>in FLASH (the whole model)"] -->|"ChaCha20: decrypt<br/>ONE layer into scratch"| WS["weight_scratch · RAM<br/>(this layer's weights only)"]
+    ACT["activations · RAM<br/>(buf_a ⇄ buf_b, ping-pong)"] --> DOT
+    WS --> DOT["➗ dot product<br/>Σ (weight × activation)<br/>→ int32 accumulator"]
+    DOT --> POST["scale (&gt;&gt;7) · add bias ·<br/>clamp to int8 · activation<br/>(ReLU / sigmoid / tanh / linear)"]
+    POST --> NEXT["new activations"]
+    NEXT -->|"🧹 wipe scratch · swap buffers ·<br/>go to next layer"| ACT
+    NEXT --> OUT["📤 output · int8[M]<br/>(after the last layer)"]
+    OUT --> ARG["mnv_ct_argmax →<br/>🎯 class index (the answer)"]
+```
+
+Reading it: the input becomes the first set of **activations**. For each layer,
+the layer's weights are **decrypted from flash into scratch**, then
+multiplied-and-summed against the current activations (a **dot product**, into a
+wide 32-bit number so it can't overflow), then scaled, bias-added, clamped back
+to `int8`, and squashed by an **activation function** to become the *next*
+layer's activations. Two buffers take turns (**ping-pong**), so no extra memory
+is needed. After the last layer, the output list goes to **argmax**, which picks
+the winning class. (1D-CNN and BNN follow the same shape — only the per-layer
+math differs: convolution+pooling, or XNOR+popcount.)
+
+### 7b. The guard sequence — the safety checks around it
 
 ```mermaid
 graph TD
