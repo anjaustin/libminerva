@@ -111,6 +111,36 @@ PY
     else
         echo "  PROGMEM weights on ATmega328P  FAIL (oracle: $E0 $E1 $E2 $E3)"; rc=1
     fi
+
+    # ── EEPROM key-override path (the SECURE pattern; threat model §6) ──
+    # Provision the key into the ELF .eeprom section (EEMEM); simavr loads it, the
+    # firmware reads it into RAM and overrides model.key. Validates the documented
+    # secure pattern actually works, and that a wrong/unprovisioned key is rejected.
+    "$PY" - "$TMP/key.bin" > "$TMP/keybytes.h" <<'PY'
+import sys
+k=open(sys.argv[1],'rb').read(32)
+print('#define REAL_KEY '+','.join('0x%02X'%b for b in k))
+print('#define WRONG_KEY '+','.join('0xFF' for _ in range(32)))
+PY
+    eek_build() {  # $1 = extra defs, $2 = out elf
+        avr-gcc -mmcu=atmega328p -DF_CPU=16000000UL -DMNV_TARGET_ATMEGA328P -DMNV_ARCH_MLP $1 \
+            -DEXP0=$E0 -DEXP1=$E1 -DEXP2=$E2 -DEXP3=$E3 -Os -std=c11 \
+            -ffunction-sections -fdata-sections -Wl,--gc-sections -I"$TMP" -I"$TMP/avr" $INC \
+            "$ROOT/tests/host/avr_eeprom_harness.c" "$TMP/avr/weights.c" $CORE $SEC \
+            "$ROOT/src/hal/mnv_hal_avr.c" -o "$2" 2>"$TMP/eek.err"
+    }
+    if eek_build "" "$TMP/eek_ok.elf" && \
+       "$TMP/runner" "$TMP/eek_ok.elf" "$(result_addr "$TMP/eek_ok.elf" avr_result)" | grep -q PASS; then
+        echo "  EEPROM key (right) on ATmega328P == host oracle  PASS"
+    else
+        echo "  EEPROM key (right)  FAIL"; cat "$TMP/eek.err" 2>/dev/null; rc=1
+    fi
+    if eek_build "-DUSE_WRONG_KEY" "$TMP/eek_bad.elf" && \
+       "$TMP/runner" "$TMP/eek_bad.elf" "$(result_addr "$TMP/eek_bad.elf" avr_result)" | grep -q PASS; then
+        echo "  EEPROM key (wrong) -> mnv_init rejects (TAMPER)  PASS"
+    else
+        echo "  EEPROM key (wrong)  FAIL"; rc=1
+    fi
 else
     echo "  PROGMEM path  SKIP (no python3/numpy)"
 fi
