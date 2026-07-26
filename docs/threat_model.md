@@ -72,7 +72,9 @@ Minerva assumes an adversary with:
 
 **Attack:** Adversary dumps flash via ISP or JTAG and reads weight values.
 
-**Mitigation:** Weights are encrypted with ChaCha20-256. The key is never stored in flash — it is provisioned into a protected memory region (EEPROM with write-lock fuse on AVR, or TrustZone secure world on ARM). Without the key, the weight blob is indistinguishable from random bytes.
+**Mitigation:** Weights are encrypted with ChaCha20-256. Without the key, the weight blob is indistinguishable from random bytes.
+
+**Where the key lives is the deployer's decision, and it is NOT protected by default.** The engine takes the key as a pointer (`mnv_model.key`); it does not care where that memory is. The compiler emits `.key = MNV_DEVICE_KEY`, and the quick-start / `secrets.h` pattern defines `MNV_DEVICE_KEY` as a compiled-in `static const` array — which means **the key is embedded in the firmware image (flash) and is recovered by any flash dump.** That convenient pattern is for development only and provides *no* confidentiality for the key. For the encryption above to actually protect the weights, the deployer MUST instead point `mnv_model.key` at a RAM buffer loaded at runtime from a protected store (EEPROM behind a fuse, STM32 backup SRAM behind RDP-2, or a secure element) and wipe that buffer after `mnv_init()`. See §6 for the recommended stores and `examples/atmega328p_classify/main.c` for the runtime-load pattern. A build that skips this — key compiled into flash — offers weight *integrity* (the MAC still works) but **not weight confidentiality**.
 
 **Key domain separation:** the master device key is never handed to a primitive directly. Each purpose (weight encryption, weight MAC, output authentication) uses an independent 32-byte subkey derived as `BLAKE2s(key = master, message = {domain-label})` — see `src/security/mnv_kdf.h`, mirrored bit-for-bit by the compiler. This removes the encrypt-and-MAC-with-the-same-key overlap and ensures a weakness in one primitive cannot cross-contaminate another.
 
@@ -216,6 +218,36 @@ The device key (`MNV_DEVICE_KEY`) is the root of all security. Its compromise br
 **STM32:** Use the RDP (Read-Out Protection) Level 2 option byte. Store key in backup SRAM powered by VBAT.
 
 **Production:** Use a hardware secure element (ATECC608A, SE050) as a key store and co-processor for MAC verification. The MCU never sees the key in cleartext.
+
+**Feeding the key to Minerva at runtime.** The compiler emits `.key = MNV_DEVICE_KEY` into a `const mnv_model_t`, but the application can override that pointer with a runtime-loaded buffer before `mnv_init()` — so the real key never has to be compiled into flash. In production, define `MNV_DEVICE_KEY` in `secrets.h` as a 32-byte **zero placeholder** (the compiled-in value is then unused) and load the real key from the protected store:
+
+```c
+#include <avr/eeprom.h>
+#include <string.h>
+
+/* Key was written to EEPROM offset 0 at provisioning (e.g. avrdude -U eeprom:w),
+   behind a set lock fuse so a flash/JTAG dump cannot read it. This buffer must
+   live for the whole inference lifetime (see note) — keep it static/global. */
+static uint8_t dev_key[32];
+eeprom_read_block(dev_key, (const void *)0, sizeof(dev_key));
+
+static mnv_model_t model;        /* mutable copy of the const descriptor */
+model = mnv_model;
+model.key = dev_key;             /* point .key at the RAM buffer, not flash */
+
+mnv_status_t s = mnv_init(&ctx, &model);
+/* ... run inference against &model / mnv_run() for as long as needed ... */
+mnv_secure_zero(dev_key, sizeof(dev_key));   /* wipe only at shutdown/power-down */
+```
+
+**Lifetime note:** the engine re-derives the per-purpose subkeys from the master
+key on *every* `mnv_run()` (not just at `mnv_init()`), so `dev_key` must remain
+valid and correct until you stop doing inference — do **not** wipe it right after
+init. The derived subkeys (`k_enc`, `k_mac`, `k_out`) are each wiped immediately
+after use, so only the master key persists in RAM. This keeps the master out of
+flash (a powered-off flash/JTAG dump gets nothing), narrowing exposure to a live
+RAM/debug attack — strictly better than compiling it into the image.
+`examples/atmega328p_classify/main.c` implements this pattern.
 
 ---
 
