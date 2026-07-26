@@ -17,7 +17,8 @@ DEFS = -DMNV_TARGET_ATMEGA328P -DF_CPU=$(F_CPU)
 CFLAGS = -mmcu=$(MCU) $(DEFS) \
          -Os -std=c11 -Wall -Wextra \
          -ffunction-sections -fdata-sections \
-         -Iinclude -Isrc
+         -I$(APP) -Iinclude \
+         -Isrc/core -Isrc/security -Isrc/arch -Isrc/hal
 
 SRCS = src/core/mnv_fixed.c \
        src/core/mnv_engine.c \
@@ -27,6 +28,8 @@ SRCS = src/core/mnv_fixed.c \
        src/security/mnv_chacha20.c \
        src/security/mnv_blake2s.c \
        src/security/mnv_ct.c \
+       src/security/mnv_lut.c \
+       src/security/mnv_outauth.c \
        src/hal/mnv_hal_avr.c \
        $(APP)/main.c \
        $(APP)/weights.c
