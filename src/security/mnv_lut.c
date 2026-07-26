@@ -34,7 +34,10 @@
 
 /* ── Sigmoid LUT: sigmoid(x/127.0)*127, x=-128..127, idx=x+128 ─────────── */
 
-static const int8_t MNV_SIGMOID_LUT_B[256] PROGMEM = {
+/* Canonical activation LUTs — shared with the plain (non-blinded) path in
+ * mnv_fixed.c via the extern decls in mnv_lut.h, so there is one copy, not two.
+ * test_host.c asserts the two paths agree over all x. */
+const int8_t mnv_sigmoid_lut[256] PROGMEM = {
     -63,-63,-63,-63,-63,-63,-63,-63,-63,-63,-63,-63,-63,-63,-63,-62,
     -62,-62,-62,-62,-62,-62,-61,-61,-61,-61,-61,-60,-60,-60,-60,-59,
     -59,-59,-58,-58,-58,-57,-57,-57,-56,-56,-55,-55,-55,-54,-54,-53,
@@ -55,7 +58,7 @@ static const int8_t MNV_SIGMOID_LUT_B[256] PROGMEM = {
 
 /* ── Tanh LUT: tanh(x/64.0)*127, x=-128..127, idx=x+128 ─────────────────── */
 
-static const int8_t MNV_TANH_LUT_B[256] PROGMEM = {
+const int8_t mnv_tanh_lut[256] PROGMEM = {
     -127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-126,-126,-126,-126,
     -126,-125,-125,-125,-124,-124,-124,-123,-123,-122,-122,-121,-121,-120,-119,-119,
     -118,-117,-117,-116,-115,-114,-113,-113,-112,-111,-110,-109,-108,-107,-106,-104,
@@ -102,14 +105,14 @@ static int8_t blinded_lut_read(const int8_t *table,
 
 int8_t mnv_lut_sigmoid_blinded(int8_t x, uint32_t *prng_state)
 {
-    return blinded_lut_read(MNV_SIGMOID_LUT_B,
+    return blinded_lut_read(mnv_sigmoid_lut,
                             (uint8_t)((int16_t)x + 128),
                             prng_state);
 }
 
 int8_t mnv_lut_tanh_blinded(int8_t x, uint32_t *prng_state)
 {
-    return blinded_lut_read(MNV_TANH_LUT_B,
+    return blinded_lut_read(mnv_tanh_lut,
                             (uint8_t)((int16_t)x + 128),
                             prng_state);
 }
@@ -125,7 +128,7 @@ static void lut_dummy_scan(uint32_t *prng_state)
     uint8_t mask = mnv_prng_mask8(prng_state);
     volatile int8_t dummy = 0;
     for (uint16_t i = 0; i < 256U; i++)
-        dummy = (int8_t)(dummy ^ LUT_READ(MNV_SIGMOID_LUT_B, (uint8_t)((uint8_t)i + mask)));
+        dummy = (int8_t)(dummy ^ LUT_READ(mnv_sigmoid_lut, (uint8_t)((uint8_t)i + mask)));
     (void)dummy;
 }
 
