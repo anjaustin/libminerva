@@ -203,7 +203,7 @@ static void test_outauth(void)
 int main(void)
 {
     printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  MINERVA v1.3.0-Athena — Host Test Suite              ║\n");
+    printf("║  MINERVA v1.3.1-Athena — Host Test Suite              ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n");
     test_chacha20();
     test_blake2s();
