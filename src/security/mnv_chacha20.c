@@ -14,6 +14,7 @@
  */
 
 #include "mnv_chacha20.h"
+#include "mnv_endian.h"
 #include <string.h>
 
 /* =========================================================================
@@ -27,23 +28,6 @@
     (c) += (d); (b) ^= (c); (b) = ROTL32((b), 12); \
     (a) += (b); (d) ^= (a); (d) = ROTL32((d),  8); \
     (c) += (d); (b) ^= (c); (b) = ROTL32((b),  7);
-
-/* Little-endian load/store — portable, no UB */
-static inline uint32_t load32_le(const uint8_t *p)
-{
-    return (uint32_t)p[0]
-         | ((uint32_t)p[1] << 8)
-         | ((uint32_t)p[2] << 16)
-         | ((uint32_t)p[3] << 24);
-}
-
-static inline void store32_le(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)(v);
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
 
 /* =========================================================================
  * CORE BLOCK FUNCTION

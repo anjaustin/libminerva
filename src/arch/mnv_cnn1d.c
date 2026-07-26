@@ -49,11 +49,11 @@ MNV_STATIC_ASSERT(MNV_CNN_FLAT_SIZE <= MNV_CTX_BUF_SIZE, cnn_featmap_overflows_b
  * mnv_destroy(). */
 static mnv_act_t conv_scratch[MNV_CNN_CONV_LEN];
 
-/* ── Branchless max (CT, from v1.2 argmax fix) ─────────────────────────────── */
+/* ── Branchless max (CT): shared mnv_ct_gt_mask, was hand-inlined here ──────── */
 static inline mnv_act_t ct_max8(mnv_act_t a, mnv_act_t b)
 {
     int16_t  diff = (int16_t)(int8_t)b - (int16_t)(int8_t)a;
-    uint8_t  b_gt = (uint8_t)(~((uint8_t)((uint16_t)((int16_t)(diff-1)) >> 8U)));
+    uint8_t  b_gt = mnv_ct_gt_mask(diff);
     return (mnv_act_t)(((uint8_t)(int8_t)a & ~b_gt) |
                        ((uint8_t)(int8_t)b &  b_gt));
 }

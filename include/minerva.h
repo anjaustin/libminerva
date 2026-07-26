@@ -260,21 +260,6 @@ mnv_status_t mnv_verify_output_with_key(const mnv_ctx_t *ctx,
  */
 void mnv_get_output_mac(const mnv_ctx_t *ctx, uint8_t *mac);
 
-/* =========================================================================
- * DIAGNOSTICS (HOST TARGET ONLY)
- * ========================================================================= */
-
-#if defined(MNV_TARGET_HOST)
-/**
- * @brief Print context status to stdout. Host/debug only.
- */
-void mnv_dump_status(const mnv_ctx_t *ctx);
-
-/**
- * @brief Print weight statistics. Host/debug only.
- */
-void mnv_dump_weights(const mnv_model_t *model, const mnv_ctx_t *ctx);
-#endif
 
 #ifdef __cplusplus
 }

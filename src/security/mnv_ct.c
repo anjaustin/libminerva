@@ -58,13 +58,10 @@ mnv_status_t mnv_ct_validate_input(const mnv_act_t *input, uint16_t len)
 }
 
 /**
- * Constant-time argmax for int8 vector.
- *
- * diff16 = vec[i] - max_val  (int16 to avoid int8 overflow at ±127/±128)
- * is_gt  = 0xFF if diff16 > 0, else 0x00
- *        = ~( (uint8_t)( (uint16_t)(diff16 - 1) >> 8 ) )
- *   When diff16 > 0: diff16-1 >= 0, top byte of uint16 = 0x00, ~0x00 = 0xFF
- *   When diff16 <= 0: diff16-1 < 0, uint16 top byte = 0xFF, ~0xFF = 0x00
+ * Constant-time argmax for int8 vector. is_gt = mnv_ct_gt_mask(vec[i]-max_val)
+ * is 0xFF when vec[i] > max_val (branchless); the masked selects update the
+ * running max and its index without leaking which element won. Ties keep the
+ * lower index (strict >).
  */
 uint8_t mnv_ct_argmax(const mnv_act_t *vec, uint16_t len)
 {
@@ -73,7 +70,7 @@ uint8_t mnv_ct_argmax(const mnv_act_t *vec, uint16_t len)
 
     for (uint16_t i = 1U; i < len; i++) {
         int16_t diff16 = (int16_t)(int8_t)vec[i] - (int16_t)max_val;
-        uint8_t is_gt  = (uint8_t)(~((uint8_t)((uint16_t)((int16_t)(diff16 - 1)) >> 8U)));
+        uint8_t is_gt  = mnv_ct_gt_mask(diff16);
 
         max_val = (int8_t) (((uint8_t)max_val         & ~is_gt) |
                              ((uint8_t)(int8_t)vec[i]  &  is_gt));
@@ -94,7 +91,7 @@ mnv_status_t mnv_ct_confidence_check(const mnv_act_t *output, uint16_t len)
     int8_t max_val = (int8_t)output[0];
     for (uint16_t i = 1U; i < len; i++) {
         int16_t d  = (int16_t)(int8_t)output[i] - (int16_t)max_val;
-        uint8_t gt = (uint8_t)(~((uint8_t)((uint16_t)((int16_t)(d - 1)) >> 8U)));
+        uint8_t gt = mnv_ct_gt_mask(d);
         max_val = (int8_t)(((uint8_t)max_val          & ~gt) |
                             ((uint8_t)(int8_t)output[i] &  gt));
     }

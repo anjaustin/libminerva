@@ -9,6 +9,7 @@
 
 #include "mnv_blake2s.h"
 #include "mnv_ct.h"
+#include "mnv_endian.h"
 #include <string.h>
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -44,18 +45,6 @@ static const uint8_t BLAKE2S_SIGMA[10][16] = {
     (v)[d]  = ROTR32((v)[d] ^ (v)[a],  8);      \
     (v)[c] += (v)[d];                            \
     (v)[b]  = ROTR32((v)[b] ^ (v)[c],  7);
-
-static inline uint32_t load32_le(const uint8_t *p)
-{
-    return (uint32_t)p[0]        | ((uint32_t)p[1] <<  8)
-         | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static inline void store32_le(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;       p[1] = (uint8_t)(v >>  8);
-    p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
-}
 
 /* ── Compress ───────────────────────────────────────────────────────────── */
 

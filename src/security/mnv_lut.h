@@ -8,6 +8,11 @@
 
 #include "mnv_types.h"
 
+/* Canonical activation tables (defined once in mnv_lut.c, PROGMEM on AVR). Read
+ * via pgm_read_byte on every target. Shared with mnv_fixed.c's plain path. */
+extern const int8_t mnv_sigmoid_lut[256];
+extern const int8_t mnv_tanh_lut[256];
+
 int8_t mnv_lut_sigmoid_blinded(int8_t x, uint32_t *prng_state);
 int8_t mnv_lut_tanh_blinded(int8_t x, uint32_t *prng_state);
 int8_t mnv_lut_relu_blinded(int8_t x, uint32_t *prng_state);
