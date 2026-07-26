@@ -18,7 +18,8 @@ CFLAGS     = -mmcu=$(MCU) -DF_CPU=$(F_CPU) \
              -ffunction-sections -fdata-sections \
              -I. \
              -I$(MINERVA)/include \
-             -I$(MINERVA)/src
+             -I$(MINERVA)/src/core -I$(MINERVA)/src/security \
+             -I$(MINERVA)/src/arch -I$(MINERVA)/src/hal
 
 # -I. puts the compiler-generated mnv_model_dims.h on the include path for
 # EVERY translation unit (engine + app), so mnv_config.h adopts the model
@@ -36,6 +37,8 @@ SRCS = main.c \
        $(MINERVA)/src/security/mnv_chacha20.c \
        $(MINERVA)/src/security/mnv_blake2s.c \
        $(MINERVA)/src/security/mnv_ct.c \
+       $(MINERVA)/src/security/mnv_lut.c \
+       $(MINERVA)/src/security/mnv_outauth.c \
        $(MINERVA)/src/hal/mnv_hal_avr.c \
        weights.c
 

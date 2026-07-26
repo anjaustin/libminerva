@@ -10,8 +10,13 @@
  *   D2–D5  : 4 LED outputs (one per class)
  *   D13    : Error LED (blinks on security violation)
  *
- * The device key is stored in EEPROM page 0 (write-locked via fuse bits).
- * In production, use a hardware secure element or OTP fuse.
+ * KEY HANDLING (see docs/threat_model.md §6): the device key is provisioned to
+ * EEPROM offset 0 (write-locked via fuse bits) and read into RAM at boot; the
+ * model descriptor's .key pointer is overridden to that buffer, so the real key
+ * is NEVER compiled into flash. The MNV_DEVICE_KEY in secrets.h is only a
+ * build-time placeholder here (unused at runtime). Provision the key with e.g.
+ *   avrdude -p atmega328p -c arduino -U eeprom:w:key.bin:r
+ * In higher-assurance builds, use a secure element (ATECC608/SE050) instead.
  *
  * Security behavior:
  *   MNV_ERR_TAMPER  → LED D13 blinks SOS, no inference
@@ -89,6 +94,8 @@ static void led_error_blink(uint8_t n)
 /* Static context — zero-initialized by linker (BSS) */
 static mnv_ctx_t minerva_ctx;
 
+#define MNV_EEPROM_KEY_ADDR  0   /* EEPROM offset the device key is provisioned to */
+
 int main(void)
 {
     hw_init();
@@ -96,8 +103,21 @@ int main(void)
     /* Startup blink — 3 flashes indicate Minerva initializing */
     led_error_blink(3);
 
+    /* Load the device key from EEPROM (behind a lock fuse) into RAM and point a
+     * MUTABLE copy of the model descriptor at it, so the real key is never
+     * compiled into flash (docs/threat_model.md §6). dev_key/model are static so
+     * they live for the whole inference lifetime — the engine re-derives its
+     * subkeys from the master key on every run, so the buffer must NOT be wiped
+     * until shutdown. The compiled-in MNV_DEVICE_KEY (secrets.h) is a placeholder,
+     * overridden here and never used at runtime. */
+    static uint8_t dev_key[32];
+    eeprom_read_block(dev_key, (const void *)MNV_EEPROM_KEY_ADDR, sizeof(dev_key));
+    static mnv_model_t model;
+    model = mnv_model;
+    model.key = dev_key;
+
     /* Initialize Minerva — this runs the BLAKE2s integrity check */
-    mnv_status_t status = mnv_init(&minerva_ctx, &mnv_model);
+    mnv_status_t status = mnv_init(&minerva_ctx, &model);
     if (status != MNV_OK) {
         /* Integrity check failed at boot — blink SOS indefinitely */
         while (1) {
@@ -121,11 +141,11 @@ int main(void)
         /* Remaining inputs set to zero (unused in this example) */
         for (uint8_t i = 4; i < MNV_INPUT_SIZE; i++) input[i] = 0;
 
-        /* Run inference */
+        /* Run inference against the model bound at init (the EEPROM-keyed copy). */
         int8_t output[MNV_OUTPUT_SIZE];
-        status = mnv_run_with_model(&minerva_ctx, &mnv_model,
-                                    (const mnv_act_t *)input,
-                                    (mnv_act_t *)output);
+        status = mnv_run(&minerva_ctx,
+                         (const mnv_act_t *)input,
+                         (mnv_act_t *)output);
 
         switch (status) {
             case MNV_OK: {

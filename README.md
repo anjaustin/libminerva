@@ -137,6 +137,14 @@ void loop(void) {
 }
 ```
 
+> ⚠️ **Key placement is not secure by default.** The `secrets.h` shown here
+> compiles the device key straight into the firmware image (flash), where **any
+> flash dump recovers it** — fine for development, but it gives weight
+> *integrity* only, not *confidentiality*. For production, load the key from a
+> fuse-locked store (EEPROM / secure element) into RAM at runtime and override
+> `mnv_model.key` — see [`docs/threat_model.md` §6](docs/threat_model.md), the
+> `examples/atmega328p_classify/` EEPROM pattern, and `secrets.h.example`.
+
 ---
 
 ## Resource Budget
